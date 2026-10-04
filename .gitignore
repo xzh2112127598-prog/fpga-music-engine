@@ -19,3 +19,10 @@ rtl/**/*.bit
 rtl/**/*.fs
 rtl/**/temp/
 rtl/**/gw_*.log
+
+# ---- 仿真器工作库 ----
+work/
+*.wlf
+transcript
+vsim.wlf
+modelsim.ini
