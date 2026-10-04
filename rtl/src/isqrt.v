@@ -27,7 +27,10 @@ module isqrt (
     // 组合逻辑：本轮的移位与试减
     wire [31:0] rem_s  = {rem[29:0], rad[31:30]};
     wire [15:0] root_s = {root[14:0], 1'b0};
-    wire [16:0] test   = {root_s, 1'b01};            // 试减量 = 2*root+1
+    // ⚠️ 这里必须是 1'b1（1 位）而不是 1'b01（2 位）。
+    // 写 1'b01 时拼接结果是 18 位，赋给 17 位 wire 会把 root_s 的最高位截掉，
+    // 试减量变成 {root_s[14:0],1,0}，开方结果整体错乱（iverilog 会报 extra digits）。
+    wire [16:0] test   = {root_s, 1'b1};             // 试减量 = 2*root+1
     wire        hit    = (rem_s >= {15'd0, test});   // 零扩展后比较
     wire [31:0] rem_n  = hit ? (rem_s - {15'd0, test}) : rem_s;
     wire [15:0] root_n = hit ? (root_s + 16'd1) : root_s;

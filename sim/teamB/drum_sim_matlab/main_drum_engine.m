@@ -61,30 +61,41 @@ for k = 1:size(hits,1)
     ay(idx) = ay(idx) - dirc*pulse*kd;
 end
 ax = round(ax); ay = round(ay); az = round(az);
-THR = 0.5*LSBg; WIN=0.005; REFR=0.10;
-state=0; peak=0; wcnt=0; lastfire=-1; ays=0; events=[]; hitstart=0;
+THR_SQ   = (LSBg/2)^2;                       % 比平方，不开根号（与 RTL 一致）
+WIN_CNT  = 5*IMU_RATE/1000 + 1;              % =6，MATLAB 判据 wcnt>WIN*IMU_RATE 即 wcnt>=6
+REFR_CNT = 100*IMU_RATE/1000;                % =100
+VEL_K    = floor(127*65536/(10*LSBg));       % Q16 力度系数，与 RTL 的 localparam 一致
+DIR_TH_NUM = ceil(0.3*LSBg*WIN_CNT);         % 方位判据的分子版，避免整除边界差一
+state=0; peak_sq=0; wcnt=0; lastfire=-inf; ays=0; events=[]; hitstart=0;
+% 重力基线：慢速平均 base += floor((cur-base)/32)（即 RTL 的 >>>5）
+% 上电第一个样本直接预置（RTL 的 primed），否则 base 从 0 爬到 1g 期间会连续误触发
+bx=ax(1); by=ay(1); bz=az(1);
 for i = 1:length(tt)
-    dz = az(i)-LSBg;
-    amag = round(sqrt(ax(i)^2+ay(i)^2+dz^2));
+    if i == 1, dx=0; dy=0; dz=0;             % 预置样本不参与检测
+    else,      dx=ax(i)-bx; dy=ay(i)-by; dz=az(i)-bz; end
+    magsq = dx^2 + dy^2 + dz^2;              % 与 RTL 的 40bit 平方和一致
     switch state
         case 0
-            if amag>THR && tt(i)-lastfire>REFR
-                state=1; peak=amag; wcnt=0; ays=0; hitstart=tt(i);
+            if magsq>THR_SQ && (i-lastfire)>REFR_CNT
+                state=1; peak_sq=magsq; wcnt=0; ays=0; hitstart=tt(i);
             end
         case 1
-            peak=max(peak,amag); ays=ays+ay(i); wcnt=wcnt+1;
-            if wcnt > WIN*IMU_RATE
-                dm=ays/wcnt;
-                if dm> 0.3*LSBg, type=2;
-                elseif dm<-0.3*LSBg, type=3;
-                else, type=1; end
-                rawv = min(127, round(peak/(10*LSBg)*127));
+            peak_sq=max(peak_sq,magsq); ays=ays+dy; wcnt=wcnt+1;
+            if wcnt >= WIN_CNT
+                if      ays >=  DIR_TH_NUM, type=2;
+                elseif  ays <= -DIR_TH_NUM, type=3;
+                else,                       type=1; end
+                peak = floor(sqrt(peak_sq));              % RTL isqrt 是向下取整
+                rawv = min(127, floor(peak*VEL_K/65536)); % 定点，与 RTL 的 >>16 一致
                 events=[events; tt(i), hitstart, type, rawv];
-                state=2; lastfire=tt(i);
+                state=2; lastfire=i;
             end
         case 2
-            if tt(i)-lastfire>REFR, state=0; end
+            if (i-lastfire)>=REFR_CNT, state=0; end   % >= 才与 RTL 的倒数计数同拍
     end
+    bx = bx + floor((ax(i)-bx)/32);
+    by = by + floor((ay(i)-by)/32);
+    bz = bz + floor((az(i)-bz)/32);
 end
 disp('检测事件 [t_detect t_hitstart type rawvel]'); disp(events);
 writematrix(events,'golden/imu_events.txt');

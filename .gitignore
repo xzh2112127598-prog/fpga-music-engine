@@ -26,3 +26,8 @@ work/
 transcript
 vsim.wlf
 modelsim.ini
+
+# ---- Icarus Verilog 产物 ----
+*.vvp
+rtl/tb/sim_out/
+golden/rtl_trace.txt

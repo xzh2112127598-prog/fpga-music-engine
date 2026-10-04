@@ -27,7 +27,7 @@ module tb_hit_detector;
     reg [15:0] mem_ax [0:N_SAMP-1];
     reg [15:0] mem_ay [0:N_SAMP-1];
     reg [15:0] mem_az [0:N_SAMP-1];
-    reg [31:0] mem_exp [0:63];
+    reg [31:0] mem_exp [0:8];   // 第0行=事件数，其后每个事件一行；文件只有 9 行，别开成 [0:63]
 
     integer idx;
     integer cyc;
@@ -80,10 +80,14 @@ module tb_hit_detector;
         #2000 rst_n = 1'b1;
 
         for (idx = 0; idx < N_SAMP; idx = idx + 1) begin
-            // 这一个样本的 sample_valid 脉冲
-            sample_valid = 1'b1;
+            // ⚠️ sample_valid 必须用非阻塞赋值。用阻塞赋值会和 DUT 的 always 块竞争：
+            // initial 块在上一个 repeat 的最后一个 posedge 上就把 sample_valid 拉高，
+            // 若它先于 DUT 执行，DUT 会把同一个样本处理两遍（基线更新两遍、峰值窗
+            // 只覆盖一半样本），表现为"检测偏早 6 个样本 + 力度明显偏小"。
+            // NBA 下当拍 DUT 仍看到 0，只在下一个 posedge 采到 1，脉冲干净。
+            sample_valid <= 1'b1;
             @(posedge clk);
-            sample_valid = 1'b0;
+            sample_valid <= 1'b0;
             // 等到下一个样本时刻
             repeat (CLK_PER_SAMP - 1) @(posedge clk);
         end
@@ -91,6 +95,12 @@ module tb_hit_detector;
         // ---- 比对 ----
         exp_n = mem_exp[0];
         $display("期望事件 %0d 个，实际检测 %0d 个", exp_n, got_n);
+
+        // 容量自检：MATLAB 重新生成后若事件数变多，这里会先报错而不是 silently 少比
+        if (exp_n > 8) begin
+            $display("[ERROR] mem_exp 容量不足（%0d > 8），请把 mem_exp 声明改大", exp_n);
+            err_n = err_n + 1;
+        end
 
         if (got_n != exp_n) begin
             $display("[FAIL] 事件数不一致");

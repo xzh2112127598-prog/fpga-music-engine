@@ -11,7 +11,22 @@
 //   3) 读事务结果在 data_rd（第 1 个字节在最低 8 bit）
 //   4) ack_err=1 表示从机无应答（接线/地址/上拉问题）
 //
-// SCL 由本模块产生，SDA 为开漏三态（外部必须接 4.7k 上拉）。
+// SCL 由本模块产生，SDA 为开漏（只拉低、不推高；外部必须接 4.7k 上拉）。
+//
+// ⚠️ 四个曾经踩过的坑（改代码时别再踩回去）：
+//   1) SDA 必须"只拉低不推高"。发 '1' 位时要释放总线靠上拉，
+//      否则从机 ACK 拉低时会和主机推高打架，总线变 X。
+//   2) 释放 SDA 准备收 ACK 必须在 SCL 为低时做。
+//      在第 8 位的相位 2（SCL 仍为高）释放，SDA 会上跳，
+//      从机把这当成 STOP，位计数清零 -> 第 9 位不拉 ACK -> ack_err 恒为 1。
+//   3) phase 只能有一个驱动源。原来主状态机在 IDLE 里也写 phase，
+//      和分频块的 phase<=phase+1 打架，仿真结果依赖 always 块顺序。
+//   4) 【最重要】状态切换必须全部发生在相位 3。
+//      若在相位 2 切状态，新状态会从相位 3 开始，把相位 0/1/2 整个跳过去：
+//      S_STOP 只跑到"相位 3 = 直接结束"，压根不产生 STOP 条件；
+//      S_RSTA 也产生不了重复起始。从机就一直咬住 SDA，后续 START 全部丢失。
+//      相位 3 切换 -> phase 自然回绕到 0，新状态必定从相位 0 完整跑满 4 相位。
+//      用 nstate 做"待切换状态"：相位 2 决定去向，相位 3 真正切换。
 ////////////////////////////////////////////////////////////////////////////////
 module i2c_master #(
     parameter CLK_FREQ = 27_000_000,   // Tang Nano 20K 是 27MHz，不是 24MHz！
@@ -37,9 +52,10 @@ module i2c_master #(
     inout  wire        sda
 );
 
-    // 一个 SCL 周期分 4 个相位，故分频系数 = CLK/(4*I2C_FREQ)
-    localparam integer DIV = (CLK_FREQ / (4 * I2C_FREQ) > 1) ?
-                             (CLK_FREQ / (4 * I2C_FREQ)) : 2;
+    // 一个 SCL 周期分 4 个相位，故分频系数 = ceil(CLK/(4*I2C_FREQ))。
+    // 必须向上取整：27MHz 下 trunc 得 16 -> 422kHz，超 400kHz 上限；ceil 得 17 -> 397kHz。
+    localparam integer DIV_RAW = (CLK_FREQ + 4*I2C_FREQ - 1) / (4 * I2C_FREQ);
+    localparam integer DIV     = (DIV_RAW > 2) ? DIV_RAW : 2;
 
     localparam S_IDLE   = 4'd0,
                S_START  = 4'd1,
@@ -65,19 +81,26 @@ module i2c_master #(
     reg [7:0]  sh_reg;          // 移位发送寄存器
     reg [63:0] rd_sh;           // 移位接收寄存器
     reg [3:0]  nleft;           // 剩余字节数
-    reg        sda_o, scl_o, sda_oe;
+    reg        sda_drv, scl_o;  // sda_drv=1 表示拉低；0 表示释放（靠上拉变高）
     reg        rw_r;
     reg [6:0]  addr_r;
     reg [7:0]  reg_r;
     reg [7:0]  wdata_r;
     reg [3:0]  nbytes_r;
 
+    // 只有 IDLE 且收到 start 才算一次启动（busy 期间忽略重复 start）
+    wire start_pulse = (state == S_IDLE) && start;
+
     assign scl = scl_o;
-    assign sda = sda_oe ? sda_o : 1'bz;   // 开漏：输出 0 或高阻（靠外部上拉）
+    assign sda = sda_drv ? 1'b0 : 1'bz;   // 开漏：只拉低，其余时刻高阻靠上拉
 
     // ---- SCL 分频：产生 4 倍频 tick ----
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
+            div_cnt <= 16'd0;
+            tick    <= 1'b0;
+        end else if (start_pulse) begin
+            // 复位分频相位，保证事务第一个相位也是完整 DIV 长
             div_cnt <= 16'd0;
             tick    <= 1'b0;
         end else if (div_cnt == DIV - 1) begin
@@ -89,9 +112,11 @@ module i2c_master #(
         end
     end
 
+    // ---- phase 唯一驱动源 ----
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) phase <= 2'd0;
-        else if (tick) phase <= phase + 2'd1;
+        if (!rst_n)          phase <= 2'd0;
+        else if (start_pulse) phase <= 2'd0;
+        else if (tick)       phase <= phase + 2'd1;
     end
 
     // ---- 主状态机 ----
@@ -99,7 +124,7 @@ module i2c_master #(
         if (!rst_n) begin
             state <= S_IDLE; nstate <= S_IDLE;
             bit_cnt <= 3'd0; sh_reg <= 8'd0; rd_sh <= 64'd0; nleft <= 4'd0;
-            sda_o <= 1'b1; scl_o <= 1'b1; sda_oe <= 1'b0;
+            sda_drv <= 1'b0; scl_o <= 1'b1;
             busy <= 1'b0; done <= 1'b0; ack_err <= 1'b0;
             data_rd <= 64'd0;
             rw_r <= 1'b0; addr_r <= 7'd0; reg_r <= 8'd0;
@@ -108,9 +133,8 @@ module i2c_master #(
             done <= 1'b0;
 
             if (state == S_IDLE) begin
-                scl_o  <= 1'b1;
-                sda_o  <= 1'b1;
-                sda_oe <= 1'b0;
+                scl_o   <= 1'b1;
+                sda_drv <= 1'b0;
                 if (start) begin
                     addr_r   <= dev_addr;
                     rw_r     <= rw;
@@ -122,7 +146,6 @@ module i2c_master #(
                     data_rd  <= 64'd0;
                     rd_sh    <= 64'd0;
                     state    <= S_START;
-                    phase    <= 2'd0;
                 end
             end else if (tick) begin
                 case (state)
@@ -130,10 +153,10 @@ module i2c_master #(
                 // ---- 起始条件：SCL 高时 SDA 由 1 变 0 ----
                 S_START: begin
                     case (phase)
-                        2'd0: begin sda_oe <= 1'b1; sda_o <= 1'b1; scl_o <= 1'b1; end
+                        2'd0: begin sda_drv <= 1'b0; scl_o <= 1'b1; end
                         2'd1: begin scl_o <= 1'b1; end
-                        2'd2: begin sda_o <= 1'b0; end          // SDA 下降沿
-                        2'd3: begin scl_o <= 1'b0;
+                        2'd2: begin sda_drv <= 1'b1; end          // SDA 下降沿 = START
+                        2'd3: begin scl_o   <= 1'b0;
                                    sh_reg  <= {addr_r, 1'b0};   // 地址+W
                                    bit_cnt <= 3'd7;
                                    state   <= S_ADDR; end
@@ -143,10 +166,10 @@ module i2c_master #(
                 // ---- 重复起始（读事务前）----
                 S_RSTA: begin
                     case (phase)
-                        2'd0: begin sda_oe <= 1'b1; sda_o <= 1'b1; scl_o <= 1'b0; end
+                        2'd0: begin sda_drv <= 1'b0; scl_o <= 1'b0; end
                         2'd1: begin scl_o <= 1'b1; end
-                        2'd2: begin sda_o <= 1'b0; end
-                        2'd3: begin scl_o <= 1'b0;
+                        2'd2: begin sda_drv <= 1'b1; end
+                        2'd3: begin scl_o   <= 1'b0;
                                    sh_reg  <= {addr_r, 1'b1};   // 地址+R
                                    bit_cnt <= 3'd7;
                                    state   <= S_ADDRR; end
@@ -154,101 +177,117 @@ module i2c_master #(
                 end
 
                 // ---- 发 8 bit（S_ADDR / S_REG / S_WR / S_ADDRR 共用时序）----
+                //     数据的建立发生在相位 0（SCL 为低），SCL 高期间 SDA 保持不变。
                 S_ADDR, S_ADDRR, S_REG, S_WR: begin
                     case (phase)
-                        2'd0: begin sda_oe <= 1'b1; sda_o <= sh_reg[7]; scl_o <= 1'b0; end
-                        2'd1: begin scl_o <= 1'b1; end
-                        2'd2: begin sh_reg <= {sh_reg[6:0], 1'b0};
-                                   if (bit_cnt == 3'd0) begin
-                                       sda_oe <= 1'b0;          // 释放 SDA 准备收 ACK
-                                       case (state)
-                                           S_ADDR:  begin state <= S_AACK;  nstate <= S_REG;  end
-                                           S_ADDRR: begin state <= S_ARACK; nstate <= S_RD;   end
-                                           S_REG:   begin state <= S_RACK;
-                                                          nstate <= rw_r ? S_RSTA : S_WR; end
-                                           S_WR:    begin state <= S_WACK;  nstate <= S_STOP; end
-                                           default: begin state <= S_STOP; end
-                                       endcase
-                                   end else bit_cnt <= bit_cnt - 3'd1;
+                        2'd0: begin
+                                   // 开漏：bit=0 拉低，bit=1 释放（靠上拉为高）
+                                   sda_drv <= ~sh_reg[7];
+                                   scl_o   <= 1'b0;
                               end
-                        2'd3: begin scl_o <= 1'b0; end
+                        2'd1: begin scl_o <= 1'b1; end
+                        2'd2: begin
+                                   sh_reg <= {sh_reg[6:0], 1'b0};
+                                   if (bit_cnt == 3'd0) begin
+                                       // ⚠️ 这里不能直接切 state（见文件头坑 2/4），
+                                       //    也不能在这里释放 SDA（SCL 仍为高，会被当成 STOP）。
+                                       case (state)
+                                           S_ADDR:  nstate <= S_AACK;
+                                           S_ADDRR: nstate <= S_ARACK;
+                                           S_REG:   nstate <= S_RACK;
+                                           S_WR:    nstate <= S_WACK;
+                                           default: nstate <= S_STOP;
+                                       endcase
+                                   end
+                              end
+                        2'd3: begin
+                                   scl_o <= 1'b0;
+                                   if (bit_cnt == 3'd0) state <= nstate;
+                                   else                 bit_cnt <= bit_cnt - 3'd1;
+                              end
                     endcase
                 end
 
                 // ---- 等 ACK（第 9 个时钟，SCL 高时采样 SDA，低电平=应答）----
                 S_AACK, S_RACK, S_WACK, S_ARACK: begin
                     case (phase)
-                        2'd0: begin sda_oe <= 1'b0; scl_o <= 1'b0; end
+                        2'd0: begin sda_drv <= 1'b0; scl_o <= 1'b0; end   // SCL 低时释放
                         2'd1: begin scl_o <= 1'b1; end
                         2'd2: begin
                                   if (sda == 1'b1) begin        // NACK
                                       ack_err <= 1'b1;
-                                      state   <= S_STOP;
+                                      nstate  <= S_STOP;
                                   end else begin
-                                      if (nstate == S_WR) begin
-                                          sh_reg  <= wdata_r;
-                                          bit_cnt <= 3'd7;
-                                      end else if (nstate == S_REG) begin
-                                          sh_reg  <= reg_r;
-                                          bit_cnt <= 3'd7;
-                                      end else if (nstate == S_RD) begin
-                                          nleft   <= nbytes_r;
-                                          bit_cnt <= 3'd7;
-                                      end
-                                      state <= nstate;
+                                      case (state)
+                                          S_AACK:  begin nstate <= S_REG;
+                                                         sh_reg  <= reg_r;
+                                                         bit_cnt <= 3'd7; end
+                                          S_RACK:  begin nstate <= rw_r ? S_RSTA : S_WR;
+                                                         sh_reg  <= wdata_r;
+                                                         bit_cnt <= 3'd7; end
+                                          S_WACK:  begin nstate <= S_STOP; end
+                                          S_ARACK: begin nstate  <= S_RD;
+                                                         nleft   <= nbytes_r;
+                                                         bit_cnt <= 3'd7; end
+                                          default: nstate <= S_STOP;
+                                      endcase
                                   end
                               end
-                        2'd3: begin scl_o <= 1'b0; end
+                        2'd3: begin scl_o <= 1'b0; state <= nstate; end
                     endcase
                 end
 
                 // ---- 收 8 bit ----
                 S_RD: begin
                     case (phase)
-                        2'd0: begin sda_oe <= 1'b0; scl_o <= 1'b0; end
+                        2'd0: begin sda_drv <= 1'b0; scl_o <= 1'b0; end
                         2'd1: begin scl_o <= 1'b1; end
                         2'd2: begin
                                   rd_sh <= {rd_sh[62:0], sda};
-                                  if (bit_cnt == 3'd0) begin
-                                      state <= S_RACKB;
-                                  end else bit_cnt <= bit_cnt - 3'd1;
+                                  if (bit_cnt == 3'd0) nstate <= S_RACKB;
                               end
-                        2'd3: begin scl_o <= 1'b0; end
+                        2'd3: begin
+                                  scl_o <= 1'b0;
+                                  if (bit_cnt == 3'd0) state <= nstate;
+                                  else                 bit_cnt <= bit_cnt - 3'd1;
+                              end
                     endcase
                 end
 
-                // ---- 主机应答：还有字节就 ACK(0)，最后一个字节 NACK(1) ----
+                // ---- 主机应答：还有字节就 ACK(拉低)，最后一个字节 NACK(释放) ----
                 S_RACKB: begin
                     case (phase)
-                        2'd0: begin sda_oe <= 1'b1; sda_o <= (nleft > 4'd1) ? 1'b0 : 1'b1;
-                                   scl_o <= 1'b0; end
+                        2'd0: begin
+                                   sda_drv <= (nleft > 4'd1) ? 1'b1 : 1'b0;
+                                   scl_o   <= 1'b0;
+                              end
                         2'd1: begin scl_o <= 1'b1; end
                         2'd2: begin
                                   if (nleft > 4'd1) begin
-                                      nleft  <= nleft - 4'd1;
+                                      nleft   <= nleft - 4'd1;
                                       bit_cnt <= 3'd7;
-                                      state  <= S_RD;
+                                      nstate  <= S_RD;
                                   end else begin
-                                      state <= S_STOP;
+                                      nstate <= S_STOP;
                                   end
                               end
-                        2'd3: begin scl_o <= 1'b0; end
+                        2'd3: begin scl_o <= 1'b0; state <= nstate; end
                     endcase
                 end
 
                 // ---- 停止条件：SCL 高时 SDA 由 0 变 1 ----
                 S_STOP: begin
                     case (phase)
-                        2'd0: begin sda_oe <= 1'b1; sda_o <= 1'b0; scl_o <= 1'b0; end
+                        2'd0: begin sda_drv <= 1'b1; scl_o <= 1'b0; end
                         2'd1: begin scl_o <= 1'b1; end
-                        2'd2: begin sda_o <= 1'b1; end          // SDA 上升沿
+                        2'd2: begin sda_drv <= 1'b0; end          // SDA 上升沿 = STOP
                         2'd3: begin
-                                  scl_o  <= 1'b1;
-                                  sda_oe <= 1'b0;
+                                  scl_o   <= 1'b1;
+                                  sda_drv <= 1'b0;
                                   data_rd <= rd_sh;
-                                  done   <= 1'b1;
-                                  busy   <= 1'b0;
-                                  state  <= S_IDLE;
+                                  done    <= 1'b1;
+                                  busy    <= 1'b0;
+                                  state   <= S_IDLE;
                               end
                     endcase
                 end
