@@ -11,7 +11,7 @@
 | 2 | 三种鼓件 wav | kick / snare / hihat | `audio/kick.wav`<br>`audio/snare.wav`<br>`audio/hihat.wav` | ✅ |
 | 3 | 时域图 + 频谱图 | 3×2 组合图 | `fig/drum_overview.png` | ✅ |
 | 4 | 合成参数表 | 32bit 寄存器映射 | `doc/drum_params.md`<br>（源：`params/drum_params.md`） | ✅ |
-| 5 | 钢琴＋鼓合奏 demo | 含混响合奏试听 + 时域图 | `audio/fpga_demo_mix.wav`<br>`fig/fpga_demo_mix.png` | ⚠️ 见下方说明 |
+| 5 | 钢琴＋鼓合奏 demo | **协议 v1 驱动**：曲谱→打包→解包→32声部定点渲染 | `audio/ensemble_demo.wav`<br>`audio/ensemble_frames.bin`<br>`fig/ensemble_demo.png` | ✅ 峰值 27853 / 削波 0 |
 | 6 | 提交到 `sim/teamB/` | 仓库已建 | `sim/teamB/drum_sim_matlab/` | ✅ |
 
 ## 二、验收标准自检
@@ -43,11 +43,15 @@
 
 ## 四、需要说明的两点
 
-**1. 合奏 demo 里的钢琴是占位版本**
-任务书要求"先由队员 A 提供钢琴单音素材"。目前协议 v1（`doc/protocol_v1.md`）和
-A 的 `piano_synth.m` 尚未交付，所以 demo 用的是主脚本内置的临时钢琴排程
-（8 个音：C4 D4 E4 F4 G4 A4 B4 C5，走 3 谐波框架，参数与队长口径一致）。
-A 定稿后只需替换排程，声部框架不用动。
+**1. 合奏 demo 已按协议 v1 真实驱动**
+`demo_ensemble.m` 走完整链路：曲谱 → `protocol_pack` 打包成 12 字节帧 → 写 bin →
+`protocol_unpack` 解包校验 → 32 声部定点引擎渲染。实测 20 帧（钢琴 8 + 鼓 12），
+**峰值 27853、削波 0**。
+
+同时用它反解析了队长的 `sim/teamA/test_frames.bin`，3 帧校验**全部通过** ——
+说明两边编解码器互认。⚠️ 对接时发现一个坑：协议鼓件编码（0底鼓/1军鼓/2闭镲）
+与 `voice_render` 的 voice 类型（1/2/3）**不是一套编号**，必须映射，
+详见 `doc/protocol_v1_对接说明.md`。
 
 **2. 底鼓扫频终止频率是 55Hz，不是任务书写的 40Hz**
 已与队长确认保持 55Hz（黄金模型实测冲击感更好）。
