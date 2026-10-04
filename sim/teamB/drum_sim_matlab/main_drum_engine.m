@@ -89,6 +89,22 @@ end
 disp('检测事件 [t_detect t_hitstart type rawvel]'); disp(events);
 writematrix(events,'golden/imu_events.txt');
 writematrix(az,'golden/imu_az.txt');
+writematrix(ay,'golden/imu_ay.txt');
+
+% ---- RTL testbench 用的十六进制版本（$readmemh 只认 hex）----
+dump_hex('golden/imu_ax.hex', ax, 16);
+dump_hex('golden/imu_ay.hex', ay, 16);
+dump_hex('golden/imu_az.hex', az, 16);
+% 期望事件：第 0 行=事件数，之后每行 = {索引[31:16], 类型[15:8], 力度[7:0]}
+idx0 = round(events(:,1) * IMU_RATE);
+fidg = fopen('golden/imu_expect.hex','w');
+fprintf(fidg, '%08X\n', size(events,1));
+for e = 1:size(events,1)
+    fprintf(fidg, '%08X\n', ...
+        bitshift(idx0(e),16) + bitshift(events(e,3),8) + events(e,4));
+end
+fclose(fidg);
+fprintf('黄金向量（hex）已写出，共 %d 个期望事件\n', size(events,1));
 
 pnotes = [60 62 64 65 67 69 71 72];
 pev = zeros(length(pnotes),3);
@@ -192,4 +208,16 @@ fprintf(fid,'     鼓增强(kick click/响弦5-9k/镲金属共振)；Freeverb混
 fprintf(fid,'     李萨如+频谱可视化；恒定异常声部 %d\n', nbad);
 fclose(fid);
 disp('=== P2 全部完成：见 docs/verify_report.txt ===');
+
+function dump_hex(fname, data, width)
+% DUMP_HEX 导出十六进制补码向量，供 Verilog $readmemh 读取
+d = round(data(:));
+d = mod(d, 2^width);                  % 负数转补码
+fid = fopen(fname, 'w');
+ndig = ceil(width/4);
+for i = 1:length(d)
+    fprintf(fid, '%0*X\n', ndig, d(i));
+end
+fclose(fid);
+end
 
