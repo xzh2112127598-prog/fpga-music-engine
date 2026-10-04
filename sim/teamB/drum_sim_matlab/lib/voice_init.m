@@ -1,0 +1,9 @@
+function v = voice_init(n)
+% VOICE_INIT 初始化 n 个声部（复音通道）
+%   钢琴3谐波需要 phase/phase2/phase3 + env/env2/env3
+blank = struct('state',0,'note',0,'vel',0,'type',0,'ftw',0, ...
+    'phase',0,'phase2',0,'phase3',0,'nphase',0, ...
+    'f1',0,'f2',0,'f3',0,'f4',0,'sidx',0,'lfo',0, ...
+    'env',0,'env2',0,'env3',0,'age',0);
+v = repmat(blank, n, 1);
+end
