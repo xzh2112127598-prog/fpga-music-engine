@@ -4,7 +4,9 @@
 # 用法：
 #   ./tools/run_iverilog.sh i2c_master        # I2C 主机 + 从机模型
 #   ./tools/run_iverilog.sh hit_detector      # 敲击检测 vs MATLAB 黄金模型
+#   ./tools/run_iverilog.sh osc_dds           # DDS（插值/查表/噪声）vs 黄金向量
 #   ./tools/run_iverilog.sh trace             # 导出逐样本内部状态，供 diff_trace.py 对拍
+#   ./tools/run_iverilog.sh rom               # 重新生成 golden/*.hex 波表并自校验
 #   ./tools/run_iverilog.sh all
 #
 # Icarus 安装位置由 IVL 环境变量指定，默认 C:/Users/XuXia/iverilog/bin
@@ -14,6 +16,7 @@
 set -u
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 IVL="${IVL:-C:/Users/XuXia/iverilog/bin}"
+PY="${PY:-C:/Users/XuXia/.workbuddy/binaries/python/versions/3.13.12/python.exe}"
 OUT="${REPO}/rtl/tb/sim_out"
 GOLDEN_DIR="${REPO}/sim/teamB/drum_sim_matlab"
 
@@ -42,6 +45,14 @@ case "${1:-all}" in
       compile hit_detector rtl/src/isqrt.v rtl/src/hit_detector.v rtl/tb/tb_hit_detector.v &&
       run hit_detector "${GOLDEN_DIR}"
       ;;
+  osc_dds)
+      compile osc_dds rtl/src/osc_dds.v rtl/tb/tb_osc_dds.v &&
+      run osc_dds "${GOLDEN_DIR}"
+      ;;
+  rom)
+      # 重新生成 golden/sine_1024.hex / noise_8192.hex，并跑定点 DDS 与黄金向量自校验
+      "${PY}" "${REPO}/tools/make_rom_hex.py"
+      ;;
   trace)
       # 逐样本 trace：输出 TR ... 行，与 tools/ref_hit.py 的参考 trace 逐行 diff
       compile trace rtl/src/isqrt.v rtl/src/hit_detector.v rtl/tb/tb_hit_trace.v &&
@@ -51,8 +62,8 @@ case "${1:-all}" in
       echo "      python tools/diff_trace.py ${GOLDEN_DIR}/golden/rtl_trace.txt /tmp/ref.txt 5 1"
       ;;
   all)
-      $0 i2c_master && echo && $0 hit_detector
+      $0 i2c_master && echo && $0 osc_dds && echo && $0 hit_detector
       ;;
   *)
-      echo "用法: $0 {i2c_master|hit_detector|trace|all}"; exit 2;;
+      echo "用法: $0 {i2c_master|osc_dds|hit_detector|trace|rom|all}"; exit 2;;
 esac

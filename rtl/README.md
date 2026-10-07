@@ -7,6 +7,7 @@
 
 | 文件 | 功能 | 对应 MATLAB | 验证状态 |
 |---|---|---|---|
+| `src/osc_dds.v` | DDS 振荡器：32bit 相位累加 + 波表查表 + 可选线性插值 | `dds_render.m` / `dds_render_ip.m` | ✅ **120000/120000 样本逐位一致** |
 | `src/isqrt.v` | 整数平方根（16 迭代，纯移位+减法，不用 DSP） | `sqrt()` | ✅ 随 hit_detector 跑通 |
 | `src/i2c_master.v` | I2C 主机，400kHz，7bit 地址，重复起始，突发 8 字节 | — | ✅ **8/8 PASS**（含错误地址负测试） |
 | `src/hit_detector.v` | 敲击检测状态机 | `main_drum_engine` Part 3 | ✅ **8/8 事件、2800/2800 样本逐位一致** |
@@ -14,6 +15,10 @@
 
 ### 验证明细
 
+- `tb_osc_dds`：一次例化三份 `osc_dds`，共用同一个 FTW 与使能 ——
+  - 插值版（1024 点正弦表）↔ `golden/dds_440_ip_out.txt`：48000/48000，偏差 0 LSB
+  - 查表版 ↔ `golden/dds_440_out.txt`：48000/48000，偏差 0 LSB
+  - 噪声源（8192 点噪声表，ADDR_W=13）↔ `golden/noise_out.txt`：24000/24000，偏差 0 LSB
 - `tb_i2c_master`：真行为级 I2C 从机模型（不是假位计数器），
   4 个事务 + SCL 频率测量全部 PASS：写 `0x6B=0x00`、写 `0x1C=0x18`(±16g)、
   读 `0x3B`×6 = `112233445566`、错误地址 `0x69` → `ack_err=1`；
@@ -23,7 +28,27 @@
 - `tb_hit_trace` + `tools/diff_trace.py`：逐样本内部状态（dx/dy/dz/magsq/基线/状态机）
   与参考模型 diff，**0 处不一致**。
 
-## 关键设计点（答辩会被问）
+## DDS 要点（答辩会被问 / 改代码别踩）
+
+**1. 为什么要插值**
+无插值时音高被量化到 1024 个台阶，高音区失真明显。插值版 440Hz 误差 2 LSB，
+无插值 6 LSB，代价只是一个乘法器。
+
+**2. MATLAB 的 `round` 是"半值远离零"**
+`round(-0.5) = -1`，不是 0。硬件实现必须先取绝对值、`+2^(SHIFT-1)` 再右移、
+最后还原符号。直接写 `(num + HALF) >>> SHIFT` 只对正数成立，负数会差一个 LSB。
+
+**3. 左移的位宽由左操作数自己决定**（Verilog 经典坑）
+`a0s <<< 22` 中 `a0s` 是 16 位，结果就只有 16 位，高位全丢。
+必须先把 `a0s` 显式符号扩展到 40 位再移。乘法倒是上下文决定宽度，不用管。
+
+**4. 噪声源必须走相位累加器读表**（当前已如此）
+这样噪声也算一个独立振荡器，能计进"同时活跃振荡器数"。
+裸 LFSR 直出不走频率控制字，评委不认。
+
+**5. ROM 按同步读建模**，从 `en` 到 `out_valid` 共 3 拍，可直接接 Gowin pROM IP。
+上板做 128 振荡器时不能例化 128 份（要 128 块 BSRAM），得改 TDM 时分复用：
+27MHz/48kHz = 562 个系统钟，够跑 128×2 次读。接口已把 addr / frac 分开，便于改造。
 
 **1. 为什么有了平方比较还要开方？**
 阈值比较确实可以用幅值平方躲开开根号（`magsq > THR_SQ`），
@@ -52,9 +77,9 @@ base += (cur - base) >> 5
 - [x] 跑 `tb_i2c_master`，核对 SCL/SDA 时序与 ACK
 - [x] 跑 `tb_hit_detector`，与 `golden/imu_expect.hex` 逐条比对
 - [ ] 给 `mpu6050_reader.v` 补 testbench（唯一未验证的模块）
-- [ ] `osc_dds.v` + 插值查表（对拍 `golden/dds_440_ip_out.txt`，插值版误差仅 2 LSB）
+- [x] ~~`osc_dds.v` + 插值查表~~（✅ 已完成，逐位一致）
+- [x] ~~噪声波表读取~~（✅ 同一个 osc_dds 换表即可，已验证）
 - [ ] `adsr.v` + `vel_curve`（对拍 `golden/vel_curve.txt`）
-- [ ] 噪声波表读取（对拍 `golden/noise_out.txt`，RMS 18819）
 - [ ] `i2s_tx.v`（送 PCM5102，48kHz/16bit，BCLK=3.072MHz）
 - [ ] `test_mode.v`（测试模式，现场硬指标，见 `doc/next_steps.md`）
 - [ ] `key_scan.v`（12 键扫描 + 乐观消抖）

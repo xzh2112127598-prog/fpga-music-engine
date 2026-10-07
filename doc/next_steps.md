@@ -89,8 +89,8 @@
 
 | 顺序 | 模块 | 比对向量 | 备注 |
 |---|---|---|---|
-| 1 | `osc_dds.v` + 插值查表 | `dds_440_ip_out.txt` | 插值版误差仅 2 LSB，用插值版 |
-| 2 | 噪声波表读取 | `noise_out.txt` | RMS 18819（理论 18919） |
+| 1 | ✅ `osc_dds.v` + 插值查表 | `dds_440_ip_out.txt` | **已完成**：48000/48000 逐位一致，0 LSB 偏差 |
+| 2 | ✅ 噪声波表读取 | `noise_out.txt` | **已完成**：同一个 `osc_dds` 换表（8192 点，ADDR_W=13） |
 | 3 | `adsr.v` + `vel_curve` | `vel_curve.txt` | Q15 步进 |
 | 4 | `i2c_master.v` | — | 400kHz，先读 WHO_AM_I = 0x68 |
 | 5 | MPU6050 驱动 + 敲击检测 | `imu_az.txt` / `imu_events.txt` | 500Hz~1kHz 采样，量程设 **±16g** |
