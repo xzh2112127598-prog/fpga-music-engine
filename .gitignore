@@ -31,3 +31,6 @@ modelsim.ini
 *.vvp
 rtl/tb/sim_out/
 golden/rtl_trace.txt
+
+# ---- Gowin 工程本地文件 ----
+*.gprj.user
