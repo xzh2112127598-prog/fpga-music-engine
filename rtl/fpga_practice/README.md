@@ -1,5 +1,8 @@
 # 9.27–9.30 上手任务包（FPGA 入门 + 仿真）
 
+> **下板操作请看 `doc/gowin_bringup.md`**（Tang Primer 25K + Gowin EDA 逐步手册，
+> 含实测记录与故障对照表）。本文件只管"练习 + 仿真"。
+>
 > 目标（过关标志）：
 > 1. 能在 Tang 板上点亮 LED，并下板运行 `led_top`（闪烁 + 呼吸灯 + 按键控制）；
 > 2. 能在 ModelSim（或 Gowin EDA 仿真）中看到计数器的正确波形；
@@ -13,7 +16,8 @@
 | `02_clk_tick.v` / `tb_02.v` | 分频产生 48kHz、1Hz **使能脉冲** | 6 |
 | `03_breath_pwm.v` / `tb_03.v` | 呼吸灯（PWM） | 3,6 |
 | `04_debounce_fsm.v` / `tb_04.v` | 按键消抖**状态机** | 7 |
-| `led_top.v` / `led_top.cst` | 下板整合工程 | 9,10 |
+| `led_top.v` / `led_top.gprj` | 下板整合工程（引脚见 `../constraints/tang_primer_25k.cst`） | 9,10 |
+| `build_led.tcl` / `build_led.bat` | 一键编译（Gowin 自带 `gw_sh`，已实测出 `.fs`） | 9 |
 
 ## 一、先装软件（9.27 当天）
 

@@ -1,24 +1,10 @@
 //============================================================
-// 高云物理约束文件（.cst）
-// 引脚号 Pxxx 必须照【你这块板子的原理图/引脚图】填写！
-// 查询位置：Sipeed Wiki 对应板卡页面的 Pinout 图，或板卡原理图。
-// 写完在 Gowin EDA 中把本文件加入工程，再综合布局布线。
+// 这个文件【故意留空】——真实的引脚约束在上级目录：
+//
+//     rtl/constraints/tang_primer_25k.cst   （Tang Primer 25K）
+//
+// 引脚取自 Sipeed 官方例程 pmod_led/src/pmod_led.cst，已通过
+// Gowin 布局布线实测：clk=E2 / key=K6 / led[0]=L6 / led[1]=D7 / led[2]=E8
+//
+// 换板子时改那个文件，不要在工程里另建副本，避免两处漂移。
 //============================================================
-
-// 系统时钟
-IO_LOC "clk"   Pxxx;
-IO_PORT "clk" PULL_MODE=NONE;
-
-// 复位（若没有专门复位键，可先把某个按键当 rst_n）
-IO_LOC "rst_n" Pxxx;
-IO_PORT "rst_n" PULL_MODE=UP;
-
-// 用户按键
-IO_LOC "key"   Pxxx;
-IO_PORT "key" PULL_MODE=UP;
-
-// 4 个 LED
-IO_LOC "led[0]" Pxxx;
-IO_LOC "led[1]" Pxxx;
-IO_LOC "led[2]" Pxxx;
-IO_LOC "led[3]" Pxxx;
