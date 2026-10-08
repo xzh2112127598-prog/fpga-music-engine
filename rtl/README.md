@@ -48,12 +48,12 @@
 
 **5. ROM 按同步读建模**，从 `en` 到 `out_valid` 共 3 拍，可直接接 Gowin pROM IP。
 上板做 128 振荡器时不能例化 128 份（要 128 块 BSRAM），得改 TDM 时分复用：
-27MHz/48kHz = 562 个系统钟，够跑 128×2 次读。接口已把 addr / frac 分开，便于改造。
+50MHz/48kHz = 1041 个系统钟，够跑 128×2 次读。接口已把 addr / frac 分开，便于改造。
 
 **1. 为什么有了平方比较还要开方？**
 阈值比较确实可以用幅值平方躲开开根号（`magsq > THR_SQ`），
 但**力度必须是真实幅值**（`vel = 幅值/(10g)×127`），所以 `isqrt` 躲不掉。
-`isqrt` 纯移位+减法，不用 DSP，16 个周期出结果——在 27MHz 下是 0.6µs，
+`isqrt` 纯移位+减法，不用 DSP，16 个周期出结果——在 50MHz 下是 0.32µs，
 相对 1ms 的采样间隔可以忽略。
 
 **2. 一个滤波器办两件事**
@@ -84,7 +84,7 @@ base += (cur - base) >> 5
 - [ ] `test_mode.v`（测试模式，现场硬指标，见 `doc/next_steps.md`）
 - [ ] `key_scan.v`（12 键扫描 + 乐观消抖）
 - [ ] 32 路饱和加法树（混音总线 24bit）
-- [ ] 顶层集成 + 时序约束 `.cst`（Tang Nano 20K 晶振是 **27MHz**，不是 24MHz）
+- [ ] 顶层集成 + 时序约束 `.cst`（Tang Primer 25K 晶振是 **50MHz**，见 `rtl/constraints/tang_primer_25k.cst`）
 
 ## ⚠️ 写 testbench 的硬规矩
 

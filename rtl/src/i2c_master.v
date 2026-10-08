@@ -29,7 +29,7 @@
 //      用 nstate 做"待切换状态"：相位 2 决定去向，相位 3 真正切换。
 ////////////////////////////////////////////////////////////////////////////////
 module i2c_master #(
-    parameter CLK_FREQ = 27_000_000,   // Tang Nano 20K 是 27MHz，不是 24MHz！
+    parameter CLK_FREQ = 50_000_000,   // Tang Primer 25K 板载 50MHz 有源晶振
     parameter I2C_FREQ = 400_000       // 400kHz 快速模式
 )(
     input  wire        clk,
@@ -53,7 +53,9 @@ module i2c_master #(
 );
 
     // 一个 SCL 周期分 4 个相位，故分频系数 = ceil(CLK/(4*I2C_FREQ))。
-    // 必须向上取整：27MHz 下 trunc 得 16 -> 422kHz，超 400kHz 上限；ceil 得 17 -> 397kHz。
+    // 必须向上取整：50MHz 下 trunc 得 31 -> 403kHz，超 400kHz 上限；
+    //               ceil 得 32 -> 390.6kHz，合规。
+    // （27MHz 板子同理：trunc 16 -> 422kHz 超标，ceil 17 -> 397kHz 合规）
     localparam integer DIV_RAW = (CLK_FREQ + 4*I2C_FREQ - 1) / (4 * I2C_FREQ);
     localparam integer DIV     = (DIV_RAW > 2) ? DIV_RAW : 2;
 

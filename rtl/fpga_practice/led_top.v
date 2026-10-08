@@ -7,7 +7,7 @@
 // 过关标志：本工程能下板运行，且 4 个练习都在 ModelSim 中看过波形
 //============================================================
 module led_top #(
-    parameter integer CLK_FREQ = 24_000_000     // !!按板子改：Nano 20K=27_000_000
+    parameter integer CLK_FREQ = 50_000_000     // Tang Primer 25K 板载 50MHz
 )(
     input  wire       clk,
     input  wire       rst_n,

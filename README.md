@@ -2,7 +2,7 @@
 
 全国大学生嵌入式芯片与系统设计竞赛 2026 · FPGA 创新设计赛道（高云半导体）
 选题二「基于 FPGA 的实时多音色合成电子乐器引擎」
-板卡：Sipeed Tang Nano 20K（GW2AR-LV18，27MHz 晶振）
+板卡：Sipeed Tang Primer 25K（GW5A-LV25MG121NC1/I0，50MHz 有源晶振）
 
 ## 目录
 

@@ -1,0 +1,54 @@
+//============================================================
+// Tang Primer 25K（GW5A-LV25MG121NC1/I0）物理约束
+// 引脚号来源：Sipeed 官方例程 sipeed/TangPrimer-25K-example
+//            的 pmod_led/src/pmod_led.cst（不是猜的，照抄的）
+// 板载晶振：50MHz 有源晶振（不是 27MHz！）
+//============================================================
+
+// ---------- 板载固定外设 ----------
+IO_LOC "clk" E2;                       // 50MHz 有源晶振
+IO_PORT "clk" PULL_MODE=NONE DRIVE=OFF BANK_VCCIO=3.3;
+
+IO_LOC "key" K6;                       // 板载按键，低有效（按下=0）
+IO_PORT "key" PULL_MODE=NONE DRIVE=OFF BANK_VCCIO=3.3;
+
+// 板载 3 个 LED（Dock 底板）。核心板/底板丝印可能不同，以实际现象为准
+IO_LOC "led[0]" L6;                    // 例程里的 led
+IO_LOC "led[1]" D7;                    // 例程里的 led_done
+IO_LOC "led[2]" E8;                    // 例程里的 led_ready
+
+IO_PORT "led[0]" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
+IO_PORT "led[1]" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
+IO_PORT "led[2]" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
+
+//============================================================
+// 以下是外设引脚，按你实际接线启用（现在先注释掉，等接上外设再打开）
+//============================================================
+
+// ---------- PMOD1（8 脚）：给 MPU6050 的 I2C 用 ----------
+// 排针顺序 pmod_io[0..7] 对应 FPGA Ball：G5 F5 G7 G8 H7 H8 L5 K5
+// IO_LOC "scl" G5;
+// IO_LOC "sda" F5;
+// IO_PORT "scl" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
+// IO_PORT "sda" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;   // 开漏，外部要有上拉
+
+// ---------- PMOD2（8 脚）：给 I2S DAC（PCM5102 等）用 ----------
+// 排针顺序 pmod_io[8..15] 对应 FPGA Ball：J5 H5 L9 K9 J8 K8 F6 F7
+// IO_LOC "i2s_bclk" J5;     // 位时钟  = 48kHz × 16bit × 2ch = 1.536MHz
+// IO_LOC "i2s_lrck" H5;     // 左右时钟 = 48kHz
+// IO_LOC "i2s_din"  L9;     // 串行数据
+// IO_PORT "i2s_bclk" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
+// IO_PORT "i2s_lrck" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
+// IO_PORT "i2s_din"  PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
+
+//============================================================
+// 全部 64 个 PMOD/40P 引脚的 Ball 编号（需要自己分配外设时查这里）
+//  [0]=G5   [1]=F5   [2]=G7   [3]=G8   [4]=H7   [5]=H8   [6]=L5   [7]=K5
+//  [8]=J5   [9]=H5  [10]=L9  [11]=K9  [12]=J8  [13]=K8  [14]=F6  [15]=F7
+// [16]=L2  [17]=L1  [18]=K1  [19]=K2  [20]=J4  [21]=K4  [22]=G2  [23]=G1
+// [24]=F1  [25]=B2  [26]=A1  [27]=C2  [28]=E1  [29]=F2  [30]=D1  [31]=E3
+// [32]=L4  [33]=J1  [34]=H1  [35]=G4  [36]=H2  [37]=H4  [38]=L3  [39]=J2
+// [40]=D11 [41]=D10 [42]=C10 [43]=C11 [44]=B11 [45]=B10 [46]=A10 [47]=A11
+// [48]=G10 [49]=G11 [50]=H10 [51]=H11 [52]=J10 [53]=J11 [54]=E11 [55]=E10
+// [56]=L11 [57]=K11 [58]=L10 [59]=K10 [60]=L8  [61]=L7  [62]=K7  [63]=J7
+//============================================================

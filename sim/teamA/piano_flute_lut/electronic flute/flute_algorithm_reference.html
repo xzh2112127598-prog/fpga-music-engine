@@ -1,0 +1,177 @@
+<html style="margin:0;padding:0;">
+<title>电子笛子音频算法参考图</title>
+<div style="width:100%;max-width:1160px;margin:0 auto;box-sizing:border-box;font-family:-apple-system,'Segoe UI','Microsoft YaHei',sans-serif;padding:20px 16px 40px;">
+  <div style="border-bottom:2px solid #16A085;padding-bottom:10px;margin-bottom:6px;">
+    <div style="font-size:22px;font-weight:700;color:#1A3A4D;">电子笛子音频算法参考图</div>
+    <div style="font-size:14px;color:#5A6B78;margin-top:4px;">基于高云 Tang25K FPGA 的电子笛子 · 筒音作 5（D 调）· 与 <code style="background:#F0F4F6;padding:1px 5px;border-radius:4px;">electronic_flute_sim.m</code> 参数一致</div>
+  </div>
+  <div style="font-size:14px;color:#3A4A56;line-height:1.6;margin:10px 0 18px;">频率为十二平均律（A4=440Hz）；指法 bit=1 表示开孔、bit=0 表示闭孔，孔序 1~6 从吹孔侧向尾端；超吹（全按+强气流）获得高音 5^。</div>
+
+  <!-- ========== 模块A: 指法-频率对照 (ECharts) ========== -->
+  <div style="background:#FBFDFD;border:1px solid #DCE6EB;border-radius:8px;padding:14px 16px 10px;">
+    <div style="font-size:16px;font-weight:600;color:#1A3A4D;margin-bottom:4px;">指法-频率对照</div>
+    <div style="font-size:13px;color:#6A7A86;margin-bottom:8px;">数据口径：筒音作5、D调、6孔；与 MATLAB 仿真指法表完全一致。</div>
+    <div id="chartA" style="width:100%;height:380px;"></div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:10px;">
+      <tr style="background:#EAF3F6;color:#1A3A4D;">
+        <th style="border:1px solid #DCE6EB;padding:6px 8px;text-align:left;">简谱</th>
+        <th style="border:1px solid #DCE6EB;padding:6px 8px;text-align:left;">音名</th>
+        <th style="border:1px solid #DCE6EB;padding:6px 8px;text-align:left;">频率 (Hz)</th>
+        <th style="border:1px solid #DCE6EB;padding:6px 8px;text-align:left;">指法 (1-6孔)</th>
+        <th style="border:1px solid #DCE6EB;padding:6px 8px;text-align:left;">说明</th>
+      </tr>
+      <tr><td style="border:1px solid #DCE6EB;padding:6px 8px;">5</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">D5</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">587.33</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">000000</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">筒音（全按）</td></tr>
+      <tr style="background:#F7FAFB;"><td style="border:1px solid #DCE6EB;padding:6px 8px;">6</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">E5</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">659.26</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">100000</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">开 1 孔</td></tr>
+      <tr><td style="border:1px solid #DCE6EB;padding:6px 8px;">7</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">F#5</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">739.99</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">110000</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">开 1、2 孔</td></tr>
+      <tr style="background:#F7FAFB;"><td style="border:1px solid #DCE6EB;padding:6px 8px;">1</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">G5</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">783.99</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">111000</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">开 1~3 孔</td></tr>
+      <tr><td style="border:1px solid #DCE6EB;padding:6px 8px;">2</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">A5</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">880.00</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">111100</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">开 1~4 孔</td></tr>
+      <tr style="background:#F7FAFB;"><td style="border:1px solid #DCE6EB;padding:6px 8px;">3</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">B5</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">987.77</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">111110</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">开 1~5 孔</td></tr>
+      <tr><td style="border:1px solid #DCE6EB;padding:6px 8px;">4</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">C6</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">1046.50</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">111111</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">全开</td></tr>
+      <tr style="background:#F7FAFB;"><td style="border:1px solid #DCE6EB;padding:6px 8px;">5^</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">D6</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">1174.66</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">000000</td><td style="border:1px solid #DCE6EB;padding:6px 8px;">全按 + 超吹（气流更强）</td></tr>
+    </table>
+    <div style="font-size:12px;color:#8A9AA6;margin-top:6px;">基频随开孔数递增：筒音 587.33Hz → 全开 1046.50Hz，超吹 1174.66Hz，构成一个八度 8 音。</div>
+  </div>
+
+  <!-- ========== 模块B: 合成算法信号流 (静态 SVG) ========== -->
+  <div style="background:#FBFDFD;border:1px solid #DCE6EB;border-radius:8px;padding:14px 16px 10px;margin-top:18px;">
+    <div style="font-size:16px;font-weight:600;color:#1A3A4D;margin-bottom:4px;">合成算法信号流（与 MATLAB 仿真一致）</div>
+    <div style="font-size:13px;color:#6A7A86;margin-bottom:8px;">核心公式：笛音 = [sinφ + 0.5·sin2φ + 0.3·sin3φ] × breath^1.2；气声 = 带通白噪声(1.5k~6kHz) × breath²；输出 = 笛音 + 气声，峰值归一化 ±0.9。</div>
+    <svg viewBox="0 0 1060 620" style="width:100%;height:auto;display:block;">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#55606A"/></marker>
+        <marker id="arrB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2E86C1"/></marker>
+        <marker id="arrO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#E67E22"/></marker>
+        <marker id="arrT" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#16A085"/></marker>
+      </defs>
+
+      <!-- 行标注 -->
+      <text x="16" y="24" font-size="13" fill="#6A7A86">输入信号</text>
+      <text x="16" y="130" font-size="13" fill="#6A7A86">FPGA 实时合成</text>
+      <text x="16" y="452" font-size="13" fill="#6A7A86">输出</text>
+
+      <!-- ===== 输入行 y30-110 ===== -->
+      <rect x="60" y="30" width="240" height="80" rx="8" fill="#F4F6F7" stroke="#7F8C8D" stroke-width="1.5"/>
+      <text x="180" y="56" text-anchor="middle" font-size="14" font-weight="700" fill="#3A4A56">6 路触摸音孔</text>
+      <text x="180" y="76" text-anchor="middle" font-size="12" fill="#5A6B78">手指抬起=1 按住=0</text>
+      <text x="180" y="94" text-anchor="middle" font-size="12" fill="#5A6B78">指法编码 6bit</text>
+
+      <rect x="320" y="30" width="280" height="80" rx="8" fill="#F4F6F7" stroke="#7F8C8D" stroke-width="1.5"/>
+      <text x="460" y="56" text-anchor="middle" font-size="14" font-weight="700" fill="#3A4A56">气流传感器 ADC</text>
+      <text x="460" y="76" text-anchor="middle" font-size="12" fill="#5A6B78">气流强度 0~1</text>
+      <text x="460" y="94" text-anchor="middle" font-size="12" fill="#5A6B78">控制音量与气声</text>
+
+      <rect x="700" y="30" width="160" height="80" rx="8" fill="#F4F6F7" stroke="#7F8C8D" stroke-width="1.5"/>
+      <text x="780" y="56" text-anchor="middle" font-size="14" font-weight="700" fill="#3A4A56">超吹标志</text>
+      <text x="780" y="76" text-anchor="middle" font-size="12" fill="#5A6B78">全按+强气流</text>
+      <text x="780" y="94" text-anchor="middle" font-size="12" fill="#5A6B78">→ 高音 5^</text>
+
+      <!-- FPGA 虚线区域 -->
+      <rect x="48" y="128" width="866" height="348" rx="10" fill="none" stroke="#AAB7C0" stroke-width="1.5" stroke-dasharray="7 5"/>
+      <text x="54" y="145" font-size="12" fill="#8A9AA6">FPGA（高云 Tang25K）</text>
+
+      <!-- ===== 查表行 y140-210 ===== -->
+      <rect x="60" y="140" width="840" height="70" rx="8" fill="#E8F4FB" stroke="#2E86C1" stroke-width="1.5"/>
+      <text x="480" y="165" text-anchor="middle" font-size="14" font-weight="700" fill="#1A3A4D">指法查表 ROM / case</text>
+      <text x="480" y="185" text-anchor="middle" font-size="12" fill="#2E5E85">(指法 6bit, 超吹) → f0</text>
+      <text x="480" y="201" text-anchor="middle" font-size="11.5" fill="#4A6B85">000000→587.33Hz … 111111→1046.50Hz，超吹→1174.66Hz</text>
+
+      <!-- ===== 合成行 y250-330 ===== -->
+      <rect x="60" y="250" width="440" height="80" rx="8" fill="#E8F4FB" stroke="#2E86C1" stroke-width="1.5"/>
+      <text x="280" y="274" text-anchor="middle" font-size="14" font-weight="700" fill="#1A3A4D">DDS + 谐波叠加（音高链）</text>
+      <text x="280" y="294" text-anchor="middle" font-size="12" fill="#2E5E85">相位累加 φ = Σ f0/Fs（正弦 LUT 查表）</text>
+      <text x="280" y="312" text-anchor="middle" font-size="12" fill="#2E5E85">sinφ + 0.5·sin2φ + 0.3·sin3φ（超吹 1:0.6:0.4）</text>
+
+      <rect x="540" y="250" width="360" height="80" rx="8" fill="#FDEBD0" stroke="#E67E22" stroke-width="1.5"/>
+      <text x="720" y="274" text-anchor="middle" font-size="14" font-weight="700" fill="#7A4A12">气流分支（气流链）</text>
+      <text x="720" y="294" text-anchor="middle" font-size="12" fill="#8A5A22">① 音量包络 env = breath^1.2（乘到谐波上）</text>
+      <text x="720" y="312" text-anchor="middle" font-size="12" fill="#8A5A22">② 气声：白噪声→带通 1.5k~6kHz，幅度∝breath²</text>
+
+      <!-- ===== 混音行 y380-460 ===== -->
+      <rect x="60" y="380" width="840" height="80" rx="8" fill="#E8F8F5" stroke="#16A085" stroke-width="1.5"/>
+      <text x="480" y="404" text-anchor="middle" font-size="14" font-weight="700" fill="#0F5F52">混音 + 限幅</text>
+      <text x="480" y="424" text-anchor="middle" font-size="12" fill="#1F7A6A">输出 = 笛音 × 包络 + 气声</text>
+      <text x="480" y="442" text-anchor="middle" font-size="12" fill="#1F7A6A">峰值归一化 ±0.9，16bit 量化（ES8388 输入）</text>
+
+      <!-- ===== 输出行 y510-580 ===== -->
+      <rect x="60" y="510" width="260" height="70" rx="8" fill="#EAF3F6" stroke="#16A085" stroke-width="1.5"/>
+      <text x="190" y="538" text-anchor="middle" font-size="14" font-weight="700" fill="#0F5F52">I2S 发送</text>
+      <text x="190" y="558" text-anchor="middle" font-size="12" fill="#1F7A6A">48kHz / 16bit</text>
+
+      <rect x="380" y="510" width="260" height="70" rx="8" fill="#EAF3F6" stroke="#16A085" stroke-width="1.5"/>
+      <text x="510" y="538" text-anchor="middle" font-size="14" font-weight="700" fill="#0F5F52">ES8388 DAC</text>
+      <text x="510" y="558" text-anchor="middle" font-size="12" fill="#1F7A6A">外部音频 Codec（立体声）</text>
+
+      <rect x="700" y="510" width="200" height="70" rx="8" fill="#EAF3F6" stroke="#16A085" stroke-width="1.5"/>
+      <text x="800" y="548" text-anchor="middle" font-size="14" font-weight="700" fill="#0F5F52">扬声器</text>
+
+      <!-- ===== 连线 ===== -->
+      <!-- 指法 → 查表 -->
+      <line x1="180" y1="110" x2="180" y2="138" stroke="#55606A" stroke-width="1.8" marker-end="url(#arr)"/>
+      <!-- 超吹 → 查表 -->
+      <line x1="780" y1="110" x2="780" y2="138" stroke="#55606A" stroke-width="1.8" marker-end="url(#arr)"/>
+      <text x="800" y="128" font-size="11" fill="#6A7A86">超吹→高八度</text>
+      <!-- 气流 → 气流分支（绕行走廊 x930） -->
+      <polyline points="600,110 600,118 930,118 930,248 760,248" fill="none" stroke="#E67E22" stroke-width="1.8" marker-end="url(#arrO)"/>
+      <text x="936" y="188" font-size="11" fill="#E67E22" transform="rotate(90 936 188)">气流强度</text>
+      <!-- 查表 → 音高链 -->
+      <line x1="280" y1="210" x2="280" y2="248" stroke="#2E86C1" stroke-width="1.8" marker-end="url(#arrB)"/>
+      <!-- 气流分支 → 音高链（包络相乘） -->
+      <polyline points="540,285 508,285 508,278 502,278" fill="none" stroke="#E67E22" stroke-width="1.8" marker-end="url(#arrO)"/>
+      <text x="452" y="278" font-size="11" fill="#E67E22">音量包络（相乘）</text>
+      <!-- 音高链 → 混音 -->
+      <line x1="280" y1="330" x2="280" y2="378" stroke="#2E86C1" stroke-width="1.8" marker-end="url(#arrB)"/>
+      <text x="286" y="358" font-size="11" fill="#2E86C1">笛音</text>
+      <!-- 气流分支 → 混音（气声相加） -->
+      <line x1="720" y1="330" x2="720" y2="378" stroke="#E67E22" stroke-width="1.8" marker-end="url(#arrO)"/>
+      <text x="726" y="358" font-size="11" fill="#E67E22">气声（相加）</text>
+      <!-- 混音 → I2S -->
+      <line x1="190" y1="460" x2="190" y2="508" stroke="#16A085" stroke-width="1.8" marker-end="url(#arrT)"/>
+      <!-- I2S → ES8388 -->
+      <line x1="320" y1="545" x2="378" y2="545" stroke="#16A085" stroke-width="1.8" marker-end="url(#arrT)"/>
+      <!-- ES8388 → 扬声器 -->
+      <line x1="640" y1="545" x2="698" y2="545" stroke="#16A085" stroke-width="1.8" marker-end="url(#arrT)"/>
+
+      <!-- 图例 -->
+      <g font-size="12" fill="#4A5A66">
+        <rect x="60" y="596" width="12" height="12" rx="2" fill="#2E86C1"/><text x="78" y="606">音高合成链</text>
+        <rect x="180" y="596" width="12" height="12" rx="2" fill="#E67E22"/><text x="198" y="606">气流/包络/气声链</text>
+        <rect x="330" y="596" width="12" height="12" rx="2" fill="#16A085"/><text x="348" y="606">混音/输出链</text>
+        <rect x="460" y="596" width="12" height="12" rx="2" fill="#F4F6F7" stroke="#7F8C8D"/><text x="478" y="606">输入信号</text>
+        <rect x="560" y="596" width="12" height="12" rx="2" fill="none" stroke="#AAB7C0" stroke-dasharray="3 2"/><text x="578" y="606">FPGA 内部</text>
+      </g>
+    </svg>
+    <div style="font-size:12px;color:#8A9AA6;margin-top:6px;">说明：合成采用相位累加（DDS）+ 谐波叠加，FPGA 上可用正弦 LUT、定点乘法与 LFSR 伪随机噪声实现；气流 ADC 实测波形可直接替换仿真中的包络函数。</div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<script>
+(function(){
+  try {
+    if (typeof echarts === 'undefined') { return; }
+    var el = document.getElementById('chartA');
+    if (!el) { return; }
+    var chart = echarts.init(el);
+    var fing = ['000000','100000','110000','111000','111100','111110','111111','000000(超吹)'];
+    chart.setOption({
+      title: { text: '指法-频率对照（筒音作5，D调）', left: 'center', textStyle: { fontSize: 15, color: '#1A3A4D' } },
+      tooltip: { trigger: 'axis', triggerOn: 'click', renderMode: 'richText', confine: true,
+        formatter: function(params){
+          if (!params || !params.length) { return ''; }
+          var p = params[0];
+          return '简谱 ' + p.name + String.fromCharCode(10) + '频率 ' + p.value + ' Hz' + String.fromCharCode(10) + '指法 ' + fing[p.dataIndex];
+        } },
+      grid: { left: 80, right: 30, top: 64, bottom: 60, containLabel: true },
+      xAxis: { type: 'category', data: ['5','6','7','1','2','3','4','5^'], name: '简谱（^=超吹）', nameLocation: 'middle', nameGap: 32, nameTextStyle: { fontSize: 13 } },
+      yAxis: { type: 'value', name: '基频 (Hz)', nameTextStyle: { fontSize: 13 }, axisLabel: { fontSize: 12 } },
+      series: [{
+        type: 'bar', barWidth: 44,
+        data: [587.33, 659.26, 739.99, 783.99, 880, 987.77, 1046.5, 1174.66],
+        label: { show: true, position: 'top', fontSize: 12, formatter: function(p){ return p.value + 'Hz'; } }
+      }]
+    });
+    window.addEventListener('resize', function(){ if (chart) { chart.resize(); } });
+  } catch (e) { /* 图表加载失败时保留下方数据表 */ }
+})();
+</script>
+</html>

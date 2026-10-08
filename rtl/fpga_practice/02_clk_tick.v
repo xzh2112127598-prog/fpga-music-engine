@@ -7,7 +7,7 @@
 //============================================================
 module clk_tick #(
     parameter integer CLK_FREQ = 24_000_000   // !!按实际板子改!!
-                                                 // Tang Nano 20K = 27_000_000
+                                                 // Tang Primer 25K = 50_000_000
                                                  // Tang Primer 25K = 24_000_000
 )(
     input  wire clk,

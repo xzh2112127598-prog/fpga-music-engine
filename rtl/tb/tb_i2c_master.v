@@ -19,13 +19,13 @@
 ////////////////////////////////////////////////////////////////////////////////
 module tb_i2c_master;
 
-    localparam CLK_FREQ = 100_000_000;
+    localparam CLK_FREQ = 50_000_000;   // Tang Primer 25K 板载 50MHz
     localparam I2C_FREQ = 400_000;
     localparam DEV      = 7'h68;      // MPU6050（AD0 接地）
 
     reg clk = 1'b0;
     reg rst_n = 1'b0;
-    always #5 clk = ~clk;              // 100MHz 系统钟（仿真用，不对应真实板子）
+    always #10 clk = ~clk;             // 50MHz 系统钟（与真实板子一致）
 
     wire scl;
     wire sda;
