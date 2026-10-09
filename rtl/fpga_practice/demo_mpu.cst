@@ -1,0 +1,34 @@
+//============================================================
+// demo_mpu 专用约束（Tang Primer 25K Dock，GW5A-LV25MG121NC1/I0）
+//
+// ⚠️ 为什么不共用 tang_primer_25k.cst：
+//    官方原理图已核实，Dock 底板能点的用户灯只有 2 颗：
+//      板上丝印 LED4 = FPGA 球 D7（原理图网络 D7_DONE）
+//      板上丝印 LED3 = FPGA 球 E8（原理图网络 E8_READY）
+//    LED1 / LED5 是电源灯（接 +3V3，通电常亮），FPGA 控制不了。
+//    L6 不是灯 —— 它是 USB-A 口的 D+ 数据线（网络 L6_IOT23A_USB_P）。
+//    旧例程（demo_dds / led_top）里 "led[0]=L6" 是照搬 Sipeed 例程的错，
+//    那个灯从来没亮过就是这个原因。本工程只保留 2 颗真灯。
+//============================================================
+
+IO_LOC "clk" E2;                       // 50MHz 有源晶振（CPU 专用脚）
+IO_PORT "clk" PULL_MODE=NONE DRIVE=OFF BANK_VCCIO=3.3;
+
+IO_LOC "key" K6;                       // 板载按键 S1，低有效
+IO_PORT "key" PULL_MODE=UP DRIVE=OFF BANK_VCCIO=3.3;
+
+IO_LOC "key2" H11;                     // 板载按键 S2，高有效
+IO_PORT "key2" PULL_MODE=DOWN DRIVE=OFF BANK_VCCIO=3.3;
+
+IO_LOC "led[0]" D7;                    // 状态灯（丝印 LED4）
+IO_LOC "led[1]" E8;                    // 敲击/倾斜灯（丝印 LED3）
+IO_PORT "led[0]" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
+IO_PORT "led[1]" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
+
+// ---------- I2C：GY-521 接 J6（上边缘最左 PMOD，pin1=方形焊盘）----------
+// VCC->pin1/2(3V3)  GND->pin3/4  SCL->pin12(G5)  SDA->pin11(F5)
+// GY-521 板上自带 2.2k 上拉，这里不用再设 PULL_MODE=UP
+IO_LOC "scl" G5;                       // J6 pin12
+IO_LOC "sda" F5;                       // J6 pin11
+IO_PORT "scl" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
+IO_PORT "sda" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;

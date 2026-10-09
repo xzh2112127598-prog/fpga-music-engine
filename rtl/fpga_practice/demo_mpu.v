@@ -9,14 +9,17 @@
 //   SDA -> pin11  (FPGA 球号 F5)
 //   XDA/XCL/AD0/INT 全部悬空不接
 //
-// 现象（不用串口，只看板上 3 个 LED）：
-//   led[1] (D7) 【最重要，已确认会亮的灯】综合状态：
+// 现象（不用串口，只看板上 2 颗用户灯）：
+//   ⚠️ Dock 底板能点的灯只有 2 颗（官方原理图已核实）：
+//      板上丝印 LED4 = FPGA 球 D7；板上丝印 LED3 = FPGA 球 E8。
+//      LED1/LED5 是电源灯（通电常亮）；L6 不是灯，是 USB-A 的 D+ 数据线。
+//
+//   led[0] = D7（丝印 LED4）【最重要】综合状态：
 //        常亮   = 一切正常（静止时合加速度 ≈ 1g）          <- 你要的结果
 //        1Hz 慢闪 = I2C 起来了但读数不对（全 0/全 1，或量程错）
 //        8Hz 快闪 = 出现过 ACK 错误（接线/电源/地址问题）
 //        全灭   = 还在上电初始化（100ms 内）
-//   led[0] (L6) 心跳：ready 之后 1Hz 闪，证明 1kHz 采样在持续进行
-//   led[2] (E8) 晃动/敲击：有突变就亮 150ms，敲一下闪一下
+//   led[1] = E8（丝印 LED3）晃动/敲击：有突变就亮 150ms，敲一下闪一下
 //        按住 S2(key2)：改成显示 X 轴倾斜方向（ax 符号位），确认单轴真在变
 //        按住 S1(key) ：阈值降到 1/4，更灵敏
 //
@@ -35,7 +38,7 @@ module demo_mpu #(
     input  wire       clk,      // E2, 50MHz
     input  wire       key,      // K6, 低有效（按下=0）-> 高灵敏度
     input  wire       key2,     // H11, 高有效（按下=1）-> 倾斜显示模式
-    output wire [2:0] led,      // L6 / D7 / E8
+    output wire [1:0] led,      // led[0]=D7(丝印LED4)  led[1]=E8(丝印LED3)
     output wire       scl,      // J6 pin12 = G5
     inout  wire       sda       // J6 pin11 = F5
 );
@@ -141,16 +144,14 @@ module demo_mpu #(
         end
     end
 
-    // ---------- LED 输出 ----------
-    // 关键状态全部压到 led[1](D7)：这是已经确认会亮的那个灯
-    //   !ready  -> 灭（还在上电初始化）
-    //   有 ACK 错误 -> 8Hz 快闪（接线/电源/地址问题）
-    //   数据不合理 -> 1Hz 慢闪（读到全 0 / 全 1，或量程不对）
-    //   一切正常   -> 常亮（静止时合加速度 ≈ 1g）
-    assign led[0] = ready ? slow : 1'b0;                                  // 1Hz 心跳
-    assign led[1] = !ready  ? 1'b0 :                                      // 综合状态
+    // ---------- LED 输出（只有 2 颗用户灯，关键状态全在 led[0]=D7）----------
+    //   led[0] (D7)：!ready -> 灭（还在上电初始化）
+    //                有 ACK 错误 -> 8Hz 快闪（接线/电源/地址问题）
+    //                数据不合理 -> 1Hz 慢闪（读到全 0 / 全 1，或量程不对）
+    //                一切正常   -> 常亮（静止时合加速度 ≈ 1g）
+    assign led[0] = !ready  ? 1'b0 :
                     ack_err ? fast :
                     level_ok ? 1'b1 : slow;
-    assign led[2] = key2 ? ax_r[15] : tap_led;                            // 倾斜 / 敲击
+    assign led[1] = key2 ? ax_r[15] : tap_led;    // 倾斜 / 敲击
 
 endmodule

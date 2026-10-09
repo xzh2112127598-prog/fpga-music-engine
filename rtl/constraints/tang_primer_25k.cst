@@ -20,10 +20,14 @@ IO_PORT "key2" PULL_MODE=DOWN DRIVE=OFF BANK_VCCIO=3.3;
 //    板子丝印上不会印这些字。板上丝印一般是 KEY0/KEY1 之类。
 //    来源：Sipeed 官方例程 pmod_led（key=K6）与 litex（rst=H11）。
 
-// 板载 3 个 LED（Dock 底板）。核心板/底板丝印可能不同，以实际现象为准
-IO_LOC "led[0]" L6;                    // 例程里的 led
-IO_LOC "led[1]" D7;                    // 例程里的 led_done
-IO_LOC "led[2]" E8;                    // 例程里的 led_ready
+// 板载 LED（Dock 底板）。⚠️ 2026-10-09 官方原理图核实修正：
+//   能点的用户灯只有 2 颗：丝印 LED4 = FPGA 球 D7，丝印 LED3 = FPGA 球 E8
+//   LED1 / LED5 是电源灯（接 +3V3 常亮），L6 不是灯 —— 是 USB-A 的 D+ 数据线！
+//   （下面 led[0]=L6 是照搬 Sipeed 例程的历史错误，只有 led_top/demo_dds
+//    这两个旧例程还在用它；那个"灯"从来不会亮。新工程请勿使用 led[0]。）
+IO_LOC "led[0]" L6;                    // ⚠️ 实为 USB-A D+，不是灯（旧例程遗留）
+IO_LOC "led[1]" D7;                    // ✅ 用户灯（丝印 LED4，原理图网络 D7_DONE）
+IO_LOC "led[2]" E8;                    // ✅ 用户灯（丝印 LED3，原理图网络 E8_READY）
 
 IO_PORT "led[0]" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
 IO_PORT "led[1]" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
