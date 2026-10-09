@@ -10,7 +10,7 @@
 //    ±16g 下 1g = 32768/16 = 2048 LSB。
 ////////////////////////////////////////////////////////////////////////////////
 module mpu6050_reader #(
-    parameter CLK_FREQ    = 27_000_000,
+    parameter CLK_FREQ    = 50_000_000,      // Tang Primer 25K 板载 50MHz
     parameter SAMPLE_RATE = 1000              // 采样率 Hz（500~1000）
 )(
     input  wire        clk,
@@ -119,10 +119,16 @@ module mpu6050_reader #(
                     m_start <= 1'b1; st <= ST_RDW;
                 end
                 ST_RDW: if (m_done) begin
-                    // data_rd 字节 0 在最低位：AXH 是字节 0
-                    ax <= {m_rdata[ 7:0], m_rdata[15: 8]};
-                    ay <= {m_rdata[23:16], m_rdata[31:24]};
-                    az <= {m_rdata[39:32], m_rdata[47:40]};
+                    // ⚠️ i2c_master 的 data_rd 是【左移】寄存器，字节位置随 nbytes 变化：
+                    //    收到 N 个字节时，字节 0 落在 [8N-1 : 8(N-1)]。
+                    //    这里固定读 6 字节，所以字节 0 在 [47:40]：
+                    //      [47:40]=AXH [39:32]=AXL [31:24]=AYH [23:16]=AYL
+                    //      [15:8]=AZH  [7:0]=AZL
+                    //    （曾经按"字节 0 在最低位"和"在 [63:56]"各写错一次，
+                    //     都是仿真抓出来的，别再改回去）
+                    ax <= {m_rdata[47:40], m_rdata[39:32]};
+                    ay <= {m_rdata[31:24], m_rdata[23:16]};
+                    az <= {m_rdata[15: 8], m_rdata[ 7: 0]};
                     sample_valid <= 1'b1;
                     st <= ST_DLY;
                 end

@@ -45,6 +45,11 @@ case "${1:-all}" in
       compile hit_detector rtl/src/isqrt.v rtl/src/hit_detector.v rtl/tb/tb_hit_detector.v &&
       run hit_detector "${GOLDEN_DIR}"
       ;;
+  mpu6050)
+      # MPU6050 初始化 + 三轴读取（含 ACCEL_CONFIG=0x18 量程校验与实测采样率）
+      compile mpu6050 rtl/src/i2c_master.v rtl/src/mpu6050_reader.v rtl/tb/tb_mpu6050_reader.v &&
+      run mpu6050 "${REPO}/rtl/tb"
+      ;;
   osc_dds)
       compile osc_dds rtl/src/osc_dds.v rtl/tb/tb_osc_dds.v &&
       run osc_dds "${GOLDEN_DIR}"
@@ -62,8 +67,8 @@ case "${1:-all}" in
       echo "      python tools/diff_trace.py ${GOLDEN_DIR}/golden/rtl_trace.txt /tmp/ref.txt 5 1"
       ;;
   all)
-      $0 i2c_master && echo && $0 osc_dds && echo && $0 hit_detector
+      $0 i2c_master && echo && $0 mpu6050 && echo && $0 osc_dds && echo && $0 hit_detector
       ;;
   *)
-      echo "用法: $0 {i2c_master|osc_dds|hit_detector|trace|rom|all}"; exit 2;;
+      echo "用法: $0 {i2c_master|mpu6050|osc_dds|hit_detector|trace|rom|all}"; exit 2;;
 esac
