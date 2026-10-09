@@ -33,15 +33,36 @@ IO_PORT "led[2]" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
 // 以下是外设引脚，按你实际接线启用（现在先注释掉，等接上外设再打开）
 //============================================================
 
-// ---------- PMOD1（8 脚）：给 MPU6050 的 I2C 用 ----------
-// 排针顺序 pmod_io[0..7] 对应 FPGA Ball：G5 F5 G7 G8 H7 H8 L5 K5
-// IO_LOC "scl" G5;
-// IO_LOC "sda" F5;
-// IO_PORT "scl" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
-// IO_PORT "sda" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;   // 开漏，外部要有上拉
+//============================================================
+// Dock 底板三个 PMOD 排针（2x6，上边缘从左到右 J6 / J5 / J4）
+// 来源：官方原理图 Tang_Primer_25K_Dock_60033_Schematic.pdf 文本坐标提取，
+// 并与 github.com/vossstef/tang_nano_20k_c64 的 J5 引脚表交叉验证一致。
+// 每个排针：pin1/2 = 3V3，pin3/4 = GND（三个排针都一样）。
+// pin1 = 方形焊盘；奇数脚一排，偶数脚一排，脚距 2.54mm。
+//------------------------------------------------------------
+// J6（最左，接 MPU6050 用）：
+//   pin 1 = 3V3      pin 2 = 3V3
+//   pin 3 = GND      pin 4 = GND
+//   pin 5 = H5       pin 6 = J5
+//   pin 7 = H8       pin 8 = H7
+//   pin 9 = G7       pin10 = G8
+//   pin11 = F5 (SDA) pin12 = G5 (SCL)
+// J5（中间）：
+//   pin 5 = L5   pin 6 = K5   pin 7 = K11  pin 8 = L11
+//   pin 9 = E11  pin10 = E10  pin11 = A11  pin12 = A10
+// J4（最右）：
+//   pin 5 = C11  pin 6 = C10  pin 7 = B11  pin 8 = B10
+//   pin 9 = D11  pin10 = D10  pin11 = G11  pin12 = G10
+//============================================================
 
-// ---------- PMOD2（8 脚）：给 I2S DAC（PCM5102 等）用 ----------
-// 排针顺序 pmod_io[8..15] 对应 FPGA Ball：J5 H5 L9 K9 J8 K8 F6 F7
+// ---------- J6（上边缘最左 PMOD）：MPU6050 的 I2C 就接这里 ----------
+// IO_LOC "scl" G5;      // J6 pin12（右端，3V3 那一排）
+// IO_LOC "sda" F5;      // J6 pin11（右端，GND 那一排）
+// IO_PORT "scl" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
+// IO_PORT "sda" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;   // 开漏，靠模块板上拉
+// ---------- 未来 I2S DAC（PCM5102 等），引脚待定，先占位 ----------
+// bclk=J5 / lrck=H5 都在 J6 排针上（pin6/pin5），din=L9 在 40P 排针上。
+// 注意和 MPU6050（J6 pin11/12）共用 J6 排针，互不冲突。
 // IO_LOC "i2s_bclk" J5;     // 位时钟  = 48kHz × 16bit × 2ch = 1.536MHz
 // IO_LOC "i2s_lrck" H5;     // 左右时钟 = 48kHz
 // IO_LOC "i2s_din"  L9;     // 串行数据
