@@ -55,11 +55,12 @@ IO_PORT "led[2]" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
 //   pin 9 = D11  pin10 = D10  pin11 = G11  pin12 = G10
 //============================================================
 
-// ---------- J6（上边缘最左 PMOD）：MPU6050 的 I2C 就接这里 ----------
-// IO_LOC "scl" G5;      // J6 pin12（右端，3V3 那一排）
-// IO_LOC "sda" F5;      // J6 pin11（右端，GND 那一排）
-// IO_PORT "scl" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
-// IO_PORT "sda" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;   // 开漏，靠模块板上拉
+// ---------- J6（上边缘最左 PMOD）：MPU6050 的 I2C 就接这里（已接线，已启用）----------
+// GY-521 板上自带 2.2k 上拉，所以这里 PULL_MODE=NONE，不用再加电阻。
+IO_LOC "scl" G5;      // J6 pin12（右端，靠板子上边缘那一排）
+IO_LOC "sda" F5;      // J6 pin11（右端，另一排）
+IO_PORT "scl" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
+IO_PORT "sda" PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;   // 开漏，靠模块板上拉
 // ---------- 未来 I2S DAC（PCM5102 等），引脚待定，先占位 ----------
 // bclk=J5 / lrck=H5 都在 J6 排针上（pin6/pin5），din=L9 在 40P 排针上。
 // 注意和 MPU6050（J6 pin11/12）共用 J6 排针，互不冲突。

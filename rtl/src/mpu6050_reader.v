@@ -21,7 +21,8 @@ module mpu6050_reader #(
     output reg  [15:0] ay,
     output reg  [15:0] az,
     output reg         sample_valid,
-    output reg         ready                  // 初始化完成
+    output reg         ready,                 // 初始化完成
+    output reg         err                    // 曾出现 ACK 错误（粘住，供上板诊断 LED 用）
 );
 
     localparam DEV_ADDR = 7'h68;              // MPU6050（AD0 接地）
@@ -81,10 +82,11 @@ module mpu6050_reader #(
             m_start <= 1'b0; m_rw <= 1'b0; m_reg <= 8'd0;
             m_wdata <= 8'd0; m_nbytes <= 4'd1;
             ax <= 16'd0; ay <= 16'd0; az <= 16'd0;
-            sample_valid <= 1'b0; ready <= 1'b0;
+            sample_valid <= 1'b0; ready <= 1'b0; err <= 1'b0;
         end else begin
             sample_valid <= 1'b0;
             m_start      <= 1'b0;
+            if (m_ack_err) err <= 1'b1;   // 粘住：只要掉过一次 ACK 就一直报，便于肉眼诊断
 
             case (st)
                 // ---- 上电延时，等 MPU6050 时钟稳定 ----
