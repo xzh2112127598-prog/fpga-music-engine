@@ -10,7 +10,8 @@ IO_LOC "clk" E2;                       // 50MHz 有源晶振
 IO_PORT "clk" PULL_MODE=NONE DRIVE=OFF BANK_VCCIO=3.3;
 
 IO_LOC "key" K6;                       // 板载按键 1，低有效（按下=0）
-IO_PORT "key" PULL_MODE=NONE DRIVE=OFF BANK_VCCIO=3.3;
+IO_PORT "key" PULL_MODE=UP DRIVE=OFF BANK_VCCIO=3.3;
+// ↑ 必须上拉。之前设成 NONE，引脚浮空会误判成"一直按着"，导致按键失灵。
 
 IO_LOC "key2" H11;                     // 板载按键 2，高有效（按下=1）
 IO_PORT "key2" PULL_MODE=DOWN DRIVE=OFF BANK_VCCIO=3.3;

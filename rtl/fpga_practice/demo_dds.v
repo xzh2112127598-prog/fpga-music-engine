@@ -9,8 +9,9 @@
 // 现象（不用任何外设，只看板上 3 个 LED）：
 //   led[0]（L6）: DDS 输出的符号位 -> 精确按 1/2/3/4 Hz 闪烁
 //                每按一次键换一档。闪烁得准 = DDS 和 ROM 都对
-//   led[1]（D7）: 呼吸灯（时钟心跳，证明系统活着）
-//   led[2]（E8）: 消抖后的按键电平（按住变、松开回，用来找按键）
+//   led[1]（D7）: 【按键原始电平】按住 S1/S2 任意一个，这个灯就会变化
+//                ——用来定位按键到底接在哪个脚（不经过消抖，最灵敏）
+//   led[2]（E8）: 【按键计数】每按一次翻转一次并保持，验证消抖
 //
 // 两个按键都能用：K6（低有效）和 H11（高有效），按任意一个即可。
 //============================================================
@@ -98,12 +99,14 @@ module demo_dds #(
     always @(posedge clk)
         if (dds_v) dds_sign <= dds_out[15];
 
-    // led[1]: 呼吸灯
-    wire pwm;
-    breath_pwm u_bp (.clk(clk), .rst_n(rst_n), .pwm(pwm));
+    // led[2]: 每按一次键翻转一次并保持（验证消抖：抖 10 次只翻 1 次）
+    reg toggle = 1'b0;
+    always @(posedge clk or negedge rst_n)
+        if (!rst_n)        toggle <= 1'b0;
+        else if (db_press) toggle <= ~toggle;
 
-    assign led[0] = dds_sign;   // 1/2/3/4 Hz 闪烁
-    assign led[1] = pwm;        // 呼吸
-    assign led[2] = db_out;     // 按住变、松开回
+    assign led[0] = dds_sign;    // 1/2/3/4 Hz 闪烁（验证 DDS）
+    assign led[1] = trig_raw;    // 按键原始电平：按住就变化（定位按键）
+    assign led[2] = toggle;      // 按键计数：每按一次翻转一次
 
 endmodule
