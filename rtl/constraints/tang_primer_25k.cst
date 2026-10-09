@@ -9,8 +9,15 @@
 IO_LOC "clk" E2;                       // 50MHz 有源晶振
 IO_PORT "clk" PULL_MODE=NONE DRIVE=OFF BANK_VCCIO=3.3;
 
-IO_LOC "key" K6;                       // 板载按键，低有效（按下=0）
+IO_LOC "key" K6;                       // 板载按键 1，低有效（按下=0）
 IO_PORT "key" PULL_MODE=NONE DRIVE=OFF BANK_VCCIO=3.3;
+
+IO_LOC "key2" H11;                     // 板载按键 2，高有效（按下=1）
+IO_PORT "key2" PULL_MODE=DOWN DRIVE=OFF BANK_VCCIO=3.3;
+
+// ⚠️ K6 / H11 / L6 / D7 / E8 都是 FPGA 的 BGA 焊球编号，
+//    板子丝印上不会印这些字。板上丝印一般是 KEY0/KEY1 之类。
+//    来源：Sipeed 官方例程 pmod_led（key=K6）与 litex（rst=H11）。
 
 // 板载 3 个 LED（Dock 底板）。核心板/底板丝印可能不同，以实际现象为准
 IO_LOC "led[0]" L6;                    // 例程里的 led

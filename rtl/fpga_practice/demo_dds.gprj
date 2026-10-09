@@ -1,0 +1,16 @@
+<?xml version="1" encoding="UTF-8"?>
+<!DOCTYPE gowin-fpga-project>
+<Project>
+    <Template>FPGA</Template>
+    <Version>5</Version>
+    <Device name="GW5A-25" pn="GW5A-LV25MG121NC1/I0">gw5a25a-002</Device>
+    <FileList>
+        <File path="demo_dds.v" type="file.verilog" enable="1"/>
+        <File path="../src/osc_dds.v" type="file.verilog" enable="1"/>
+        <File path="02_clk_tick.v" type="file.verilog" enable="1"/>
+        <File path="03_breath_pwm.v" type="file.verilog" enable="1"/>
+        <File path="04_debounce_fsm.v" type="file.verilog" enable="1"/>
+        <File path="../constraints/tang_primer_25k.cst" type="file.cst" enable="1"/>
+        <File path="../constraints/tang_primer_25k.sdc" type="file.sdc" enable="1"/>
+    </FileList>
+</Project>

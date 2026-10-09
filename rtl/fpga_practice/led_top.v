@@ -14,7 +14,8 @@ module led_top #(
     parameter integer CLK_FREQ = 50_000_000     // Tang Primer 25K 板载 50MHz
 )(
     input  wire       clk,        // E2，50MHz 有源晶振
-    input  wire       key,        // K6，板载按键，低有效（按下=0）
+    input  wire       key,        // K6，板载按键 1，低有效（按下=0）
+    input  wire       key2,       // H11，板载按键 2，高有效（按下=1）
     output wire [2:0] led         // L6 / D7 / E8，板载 3 个 LED
 );
     // ---------- 内部上电复位（不需要外部引脚）----------
@@ -25,8 +26,8 @@ module led_top #(
         if (&por_cnt) rst_n <= 1'b1;
         else          por_cnt <= por_cnt + 1'b1;
 
-    // 低有效按键 -> 统一成"高=按下"（官方例程里写的是 if(!key)，即按下=0）
-    wire key_high = ~key;
+    // 两个按键并联：K6 低有效取反，H11 高有效直接用，按任意一个都算按下
+    wire key_high = (~key) | key2;
 
     wire tick_48k, tick_1hz;
     wire pwm;
