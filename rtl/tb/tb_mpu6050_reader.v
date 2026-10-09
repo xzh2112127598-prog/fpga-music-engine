@@ -164,8 +164,8 @@ module tb_mpu6050_reader;
             rate_hz   = 1.0e9 / period_ns;
             $display("=== 实测采样周期 = %0.0f ns -> %0.1f Hz（标称 1000Hz）===",
                      period_ns, rate_hz);
-            chk("实测采样率在 600~1100Hz 之间",
-                (rate_hz > 600.0) && (rate_hz < 1100.0));
+            chk("实测采样率在 950~1050Hz 之间",
+                (rate_hz > 950.0) && (rate_hz < 1050.0));
         end
 
         #100;

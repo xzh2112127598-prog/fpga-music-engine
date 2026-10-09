@@ -30,8 +30,15 @@ module mpu6050_reader #(
     localparam REG_RATE = 8'h19;              // SMPLRT_DIV
     localparam REG_AXH  = 8'h3B;              // ACCEL_XOUT_H
 
-    localparam BOOT_CYC = CLK_FREQ / 10;      // 上电延时 100ms
-    localparam SAMP_CYC = CLK_FREQ / SAMPLE_RATE;
+    // ⚠️ 采样间隔必须扣掉 I2C 事务本身的耗时，否则实际速率会低于 SAMPLE_RATE。
+    //    实测：读 6 字节（400kHz）约 215us ≈ 10800 个 50MHz 周期。
+    //    不扣的话标称 1000Hz 实际只有 823Hz，会让 hit_detector 的
+    //    WIN_CNT/REFR_CNT 全部偏慢 22%（窗口 6ms 变 7.29ms）。
+    //    —— 而 WIN_CNT/REFR_CNT 是从 MATLAB 的 IMU_RATE=1000 导出的真源，
+    //       改它们要重出黄金模型重做对拍，不如把硬件速率调准。
+    localparam TRANS_CYC = 11_000;            // 单次读事务开销（保守取 220us）
+    localparam SAMP_CYC  = CLK_FREQ / SAMPLE_RATE - TRANS_CYC;
+    localparam BOOT_CYC  = CLK_FREQ / 10;     // 上电延时 100ms
 
     localparam ST_BOOT = 4'd0, ST_PWR = 4'd1,  ST_PWRW = 4'd2,
                ST_ACC  = 4'd3, ST_ACCW = 4'd4, ST_RATE = 4'd5, ST_RATEW = 4'd6,
