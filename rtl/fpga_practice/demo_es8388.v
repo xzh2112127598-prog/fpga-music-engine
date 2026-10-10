@@ -76,15 +76,38 @@ module demo_es8388 #(
     // 不要再单独例化一份，否则 scl/sda 双驱动综合报错）
 
     // ---------- 按键换挡（50MHz 域）：方波 / 小星星 / 静音 ----------
-    // ⚠️ 板上有 2 个按键（K6 低有效、H11 高有效），丝印不印球号，
-    //    2026-10-11 之前只接了 K6，按另一个键毫无反应，被误判成"切档没生效"。
-    //    现在两个并联，按任意一个都能换挡（与 led_top.v 同样处理）。
-    wire key_high = (~key) | key2;       // 统一成"高=按下"
-    wire key_press;
-    debounce_fsm #(.CLK_FREQ(CLK_FREQ)) u_db (
+    // ⚠️⚠️ 2026-10-11 用 key_probe 实测出的物理事实：
+    //      **S1 = H11，高有效（按下=1）**；S2 不是 K6（多半就是不接 FPGA
+    //      的 BL616 BOOT 键）。所以 K6 这个脚**根本不是按键**。
+    //
+    //    之前写成 `key_high = (~key) | key2` 是错的：K6 不是按键时它的
+    //    电平恒为 0，于是 ~key 恒为 1，key_high 被永久拉高 —— 消抖状态机
+    //    上电 10ms 后就卡死在"已按下"，**另一个键再按也不会产生脉冲**。
+    //    这就是"按 S1 毫无反应"的真正原因（不是消抖、不是档位逻辑）。
+    //
+    //    修法：两个脚**各自独立消抖**再 OR 脉冲，任何一个脚电平异常都不会
+    //    拖累另一个；再加 0.2s 上电屏蔽，防止异常电平被当成一次"按下"
+    //    导致一上电就跳档。
+    wire press_k6, press_h11;
+    debounce_fsm #(.CLK_FREQ(CLK_FREQ)) u_db_k6 (
         .clk(clk), .rst_n(por_rst_n),
-        .key_in(key_high), .key_out(), .key_press(key_press)
+        .key_in(~key), .key_out(), .key_press(press_k6)   // K6：低有效（若真是键）
     );
+    debounce_fsm #(.CLK_FREQ(CLK_FREQ)) u_db_h11 (
+        .clk(clk), .rst_n(por_rst_n),
+        .key_in(key2), .key_out(), .key_press(press_h11)  // H11/S1：高有效（已实测）
+    );
+    reg [23:0] boot_cnt  = 24'd0;
+    reg        boot_gate = 1'b0;
+    always @(posedge clk or negedge por_rst_n)
+        if (!por_rst_n) begin
+            boot_cnt <= 24'd0; boot_gate <= 1'b0;
+        end else if (boot_cnt == 24'd10_000_000) begin
+            boot_gate <= 1'b1;                            // 上电 0.2s 后放行
+        end else
+            boot_cnt <= boot_cnt + 1'b1;
+    wire key_press = boot_gate & (press_k6 | press_h11);
+
     // 上电先给最好辨认的满幅方波，确认链路后再按 S1 换小星星
     reg [1:0] mode = 2'd0;                   // 0=方波 1=小星星 2=静音
     always @(posedge clk or negedge por_rst_n)
