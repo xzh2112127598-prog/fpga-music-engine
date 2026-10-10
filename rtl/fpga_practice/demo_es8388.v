@@ -256,18 +256,24 @@ module demo_es8388 #(
     wire bclk_alive = (bclk_wd < 18'd50000);      // 50MHz 下 50000 = 1ms
 
     // ---------- LED ----------
-    // D7（丝印 LED4）：PLL 锁定，常亮 = MCLK 已产生
+    // D7（丝印 LED4）：PLL 锁定，常亮 = MCLK 12.288MHz 已产生
     assign led[0] = pll_locked;
 
-    // E8（丝印 LED3）：三级状态机，没有耳机时用它判断链路
-    //   慢闪 1Hz  = 24 个寄存器还没写完（刚上电/卡住）
-    //   快闪 8Hz  = 写完但有问题（I2C 没收到 ACK，或芯片没吐 BCLK）
-    //   常亮      = 全 ACK 正常 + BCLK 有跳动 —— 此时耳机里应该有 440Hz
-    wire link_ok = cfg_done & ~cfg_ack_err & bclk_alive;
+    // E8（丝印 LED3）：链路分诊，四档（排查问题时全靠它）
+    //   慢闪 ~1.5Hz = 24 个寄存器还没写完（正常只出现一两秒）
+    //   中闪 ~6Hz   = 芯片没应答（ACK 错，固件每 0.5s 自动重试）
+    //                 → 查 3.3V/GND、SCL/SDA 是否接反或接触不良
+    //   快闪 ~24Hz  = 芯片应答了、寄存器写进去了，但 BCLK 没出来
+    //                 → 查模块 10 脚(SCLK)到 J6 pin6 的线
+    //   常亮        = 全 ACK 正常 + BCLK 有跳动 → 耳机应有《小星星》
+    wire slow_blink = hb_cnt[25];            // ~1.5Hz
+    wire mid_blink  = hb_cnt[23];            // ~6Hz
+    wire fast_blink = hb_cnt[21];            // ~24Hz
+    assign led[1] = !cfg_done     ? slow_blink :
+                    cfg_ack_err   ? mid_blink  :
+                    !bclk_alive   ? fast_blink : 1'b1;
+
     reg [25:0] hb_cnt = 26'd0;
     always @(posedge clk) hb_cnt <= hb_cnt + 1'b1;
-    wire slow_blink = hb_cnt[25];                 // ~1.5Hz
-    wire fast_blink = hb_cnt[22];                 // ~12Hz
-    assign led[1] = cfg_done ? (link_ok ? 1'b1 : fast_blink) : slow_blink;
 
 endmodule

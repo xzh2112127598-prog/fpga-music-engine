@@ -28,19 +28,35 @@ wire        i2c_done;
 wire        ack_err;
 wire [15:0] reg_data;
 
-// 在 I2C 时钟域汇总应答错误（i2c_done 与 ack_err 都在 dri_clk 域，同域采样）
-reg cfg_ack_err_r;
-always @(posedge clk_i2c or negedge rst_n)
-    if (!rst_n)              cfg_ack_err_r <= 1'b0;
-    else if (i2c_done && ack_err) cfg_ack_err_r <= 1'b1;
+// ---------- NACK 自动重试 ----------
+// 只要有任何一笔写没收到 ACK，就每 500ms 把整个 24 寄存器序列从头再跑。
+// 这样接线插拔/换位置之后不用重新下载位流，固件自己就能"自愈"。
+reg  cfg_ack_err_r;
+reg  [18:0] retry_cnt;                   // clk_i2c=1MHz，50 万计数 = 0.5s
+wire        retry_tick = cfg_ack_err_r && (retry_cnt == 19'd499_999);
+always @(posedge clk_i2c or negedge rst_n) begin
+    if (!rst_n) begin
+        cfg_ack_err_r <= 1'b0;
+        retry_cnt     <= 19'd0;
+    end else if (retry_tick) begin
+        cfg_ack_err_r <= 1'b0;           // 重试开始，清掉旧错误
+        retry_cnt     <= 19'd0;
+    end else begin
+        if (cfg_ack_err_r) retry_cnt <= retry_cnt + 1'b1;
+        if (i2c_done && ack_err) cfg_ack_err_r <= 1'b1;
+    end
+end
 assign cfg_ack_err = cfg_ack_err_r;
+
+// 重试时复位配置序列状态机（i2c_dri 不复位，让在途的一笔写安全跑完）
+wire cfg_seq_rst_n = rst_n & ~retry_tick;
 
 // 按固定寄存器表依次配置ES8388的ADC、DAC、I2S格式、48kHz采样率和固定耳机音量。
 i2c_reg_cfg #(
     .WL             (WL)
 ) u_i2c_reg_cfg(
     .clk            (clk_i2c),
-    .rst_n          (rst_n),
+    .rst_n          (cfg_seq_rst_n),
     .i2c_done       (i2c_done),
     .i2c_exec       (i2c_exec),
     .cfg_done       (cfg_done),
