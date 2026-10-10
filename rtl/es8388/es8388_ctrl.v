@@ -17,7 +17,9 @@ module es8388_ctrl(
     output              rx_done,
     output              tx_done,
     // 移植新增：把 ES8388 配置完成标志引给顶层点灯（原工程没有）
-    output              cfg_done
+    output              cfg_done,
+    // 移植新增：I2C 应答错误（芯片没接 / 线接错 时会置 1）
+    output              cfg_ack_err
 );
 
 parameter WL = 6'd24;
@@ -30,7 +32,8 @@ es8388_config #(
     .rst_n          (rst_n),
     .aud_scl        (aud_scl),
     .aud_sda        (aud_sda),
-    .cfg_done       (cfg_done)
+    .cfg_done       (cfg_done),
+    .cfg_ack_err    (cfg_ack_err)
 );
 
 // 从ES8388的ADC串行口接收当前左右声道24位样本。

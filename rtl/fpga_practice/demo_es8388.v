@@ -10,10 +10,14 @@
 // 听到什么：耳机里 440Hz(A4) 正弦音；按 K6 循环切
 //   440Hz -> 1000Hz -> 261.6Hz(C4) -> 静音 -> 440Hz ...
 //
-// LED 含义（板上只有这 2 颗用户灯，L6 不是灯！）：
+// LED 含义（板上只有这 2 颗用户灯，L6 不是灯！第 3 个亮的是 POWER 电源灯）：
 //   led[0] (D7/丝印LED4)  = PLL 锁定。常亮=MCLK 正常
-//   led[1] (E8/丝印LED3)  = 配置中 1Hz 慢闪；常亮=24 个寄存器写完
-//     ★ E8 常亮但没声音 -> 查接线/查耳机/查模块上红色电源灯
+//   led[1] (E8/丝印LED3)  = 链路状态，见下面三档：
+//        慢闪 1Hz  = 24 个寄存器还没写完
+//        快闪 12Hz = 写完了但 I2C 没收到 ACK，或芯片没吐 BCLK/LRCK
+//        常亮      = 24 字节全部 ACK 正常 + BCLK 有跳动 → 耳机应有 440Hz
+//     ★ 注意：参考工程的 I2C 驱动原本完全不看 ACK，所以"没接芯片"和
+//       "配置成功"表现一样。本工程已补上 ACK 采样，灯才是可信的。
 //
 // 接线（全部在 J6 这个 PMOD 上，和 MPU6050 共存，I2C 共用 G5/F5）：
 //   模块 J0(TSW-112-07-G-D 2x12 排针，丝印1=方焊盘)
@@ -145,6 +149,7 @@ module demo_es8388 #(
     wire [31:0] adc_data;
     wire        rx_done, tx_done;
     wire        cfg_done;
+    wire        cfg_ack_err;
     es8388_ctrl #(
         .WL (6'd24)
     ) u_ctrl (
@@ -160,15 +165,40 @@ module demo_es8388 #(
         .dac_data  (dac_data),
         .rx_done   (rx_done),
         .tx_done   (tx_done),
-        .cfg_done  (cfg_done)
+        .cfg_done  (cfg_done),
+        .cfg_ack_err(cfg_ack_err)
     );
 
+    // ---------- BCLK 心跳检测（50MHz 域）----------
+    // ES8388 是主机：配置成功后它必须自己吐出 BCLK（3.073MHz）。
+    // 没有耳机时，"芯片有没有在跑"只能靠这个来判断。
+    reg [2:0] bclk_sync;
+    always @(posedge clk or negedge por_rst_n)
+        if (!por_rst_n) bclk_sync <= 3'b000;
+        else            bclk_sync <= {bclk_sync[1:0], aud_bclk};
+    wire bclk_edge = bclk_sync[2] ^ bclk_sync[1];
+
+    // 看门狗：1ms 内没有任何 BCLK 翻转就判定"芯片没起振"
+    reg [17:0] bclk_wd;
+    always @(posedge clk or negedge por_rst_n)
+        if (!por_rst_n)        bclk_wd <= 18'd0;
+        else if (bclk_edge)    bclk_wd <= 18'd0;
+        else if (bclk_wd != 18'h3FFFF) bclk_wd <= bclk_wd + 1'b1;
+    wire bclk_alive = (bclk_wd < 18'd50000);      // 50MHz 下 50000 = 1ms
+
     // ---------- LED ----------
-    // D7: PLL 锁定
+    // D7（丝印 LED4）：PLL 锁定，常亮 = MCLK 已产生
     assign led[0] = pll_locked;
-    // E8: 配置中 1Hz 慢闪；配置完成常亮
+
+    // E8（丝印 LED3）：三级状态机，没有耳机时用它判断链路
+    //   慢闪 1Hz  = 24 个寄存器还没写完（刚上电/卡住）
+    //   快闪 8Hz  = 写完但有问题（I2C 没收到 ACK，或芯片没吐 BCLK）
+    //   常亮      = 全 ACK 正常 + BCLK 有跳动 —— 此时耳机里应该有 440Hz
+    wire link_ok = cfg_done & ~cfg_ack_err & bclk_alive;
     reg [25:0] hb_cnt = 26'd0;
     always @(posedge clk) hb_cnt <= hb_cnt + 1'b1;
-    assign led[1] = cfg_done ? 1'b1 : hb_cnt[25];
+    wire slow_blink = hb_cnt[25];                 // ~1.5Hz
+    wire fast_blink = hb_cnt[22];                 // ~12Hz
+    assign led[1] = cfg_done ? (link_ok ? 1'b1 : fast_blink) : slow_blink;
 
 endmodule

@@ -18,7 +18,12 @@ module i2c_dri(
     
     output  reg          scl        ,      // I2C的SCL时钟信号
     inout                sda        ,      // I2C的SDA信号
-    output  reg          dri_clk           // 驱动I2C操作的驱动时钟
+    output  reg          dri_clk    ,      // 驱动I2C操作的驱动时钟
+    // 移植新增：从机应答检测。原工程完全不看 ACK，导致"没接芯片"和
+    // "配置成功"在顶层表现一样——没有耳机时无法判断链路是否真通。
+    // ack_err 在一次完整的 I2C 传输（器件地址+字地址+数据）里只要
+    // 有任何一字节没收到 ACK 就置 1，下一次 i2c_exec 时清零。
+    output  reg          ack_err
      );
 
 //parameter define
@@ -168,6 +173,7 @@ always @(posedge dri_clk or negedge rst_n) begin
         wr_flag    <= 1'b0;
         addr_t     <= 1'b0;
         data_wr_t  <= 1'b0;
+        ack_err    <= 1'b0;
     end
     else begin
         st_done <= 1'b0 ;
@@ -183,6 +189,7 @@ always @(posedge dri_clk or negedge rst_n) begin
                     wr_flag   <= i2c_rh_wl ;
                     addr_t    <= i2c_addr  ;
                     data_wr_t <= i2c_data_w;
+                    ack_err   <= 1'b0;          // 每笔新传输前清掉上一笔的应答错误
                 end
             end
             st_sladdr: begin                            // 写地址(器件地址和字地址)
@@ -218,7 +225,7 @@ always @(posedge dri_clk or negedge rst_n) begin
                         sda_out <= 1'b1;
                     end
                     7'd37: scl     <= 1'b1;
-                    7'd38: st_done <= 1'b1;
+                    7'd38: begin st_done <= 1'b1; if(sda_in) ack_err <= 1'b1; end   // 采样第9位 ACK（新增）
                     7'd39: begin
                         scl <= 1'b0;
                         cnt <= 1'b0;
@@ -260,7 +267,7 @@ always @(posedge dri_clk or negedge rst_n) begin
                         sda_out <= 1'b1;
                     end
                     7'd33: scl     <= 1'b1;
-                    7'd34: st_done <= 1'b1;
+                    7'd34: begin st_done <= 1'b1; if(sda_in) ack_err <= 1'b1; end   // 采样第9位 ACK（新增）
                     7'd35: begin
                         scl <= 1'b0;
                         cnt <= 1'b0;
@@ -302,7 +309,7 @@ always @(posedge dri_clk or negedge rst_n) begin
                         sda_out <= 1'b1;
                     end
                     7'd33: scl     <= 1'b1;
-                    7'd34: st_done <= 1'b1;
+                    7'd34: begin st_done <= 1'b1; if(sda_in) ack_err <= 1'b1; end   // 采样第9位 ACK（新增）
                     7'd35: begin
                         scl <= 1'b0;
                         cnt <= 1'b0;
@@ -344,7 +351,7 @@ always @(posedge dri_clk or negedge rst_n) begin
                         sda_out <= 1'b1;
                     end
                     7'd33: scl <= 1'b1;
-                    7'd34: st_done <= 1'b1;
+                    7'd34: begin st_done <= 1'b1; if(sda_in) ack_err <= 1'b1; end   // 采样第9位 ACK（新增）
                     7'd35: begin
                         scl  <= 1'b0;
                         cnt  <= 1'b0;
@@ -390,7 +397,7 @@ always @(posedge dri_clk or negedge rst_n) begin
                         sda_out <= 1'b1;
                     end
                     7'd37: scl     <= 1'b1;
-                    7'd38: st_done <= 1'b1;
+                    7'd38: begin st_done <= 1'b1; if(sda_in) ack_err <= 1'b1; end   // 采样第9位 ACK（新增）
                     7'd39: begin
                         scl <= 1'b0;
                         cnt <= 1'b0;
