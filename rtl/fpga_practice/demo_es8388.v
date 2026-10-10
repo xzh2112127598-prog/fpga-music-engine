@@ -7,9 +7,13 @@
 //   3) ES8388 工作在主机模式：BCLK/LRCK 由芯片产生回给 FPGA
 //   4) FPGA 用已验证的 osc_dds 在 BCLK 域产生正弦音，24bit I2S 送出
 //
-// 听到什么：耳机里循环播放《一闪一闪亮晶晶》（C 大调，120BPM，
-//   42 个音 / 48 拍 = 24 秒一轮），带起音收尾包络，像八音盒。
-//   按 S1(K6) 一键静音，用来对比"到底是不是真的有声音"。
+// 听到什么（上电默认第 0 档，按 S1 循环切换）：
+//   档 0【满幅方波】1kHz 方波打到满量程(±0x7FFFFF)，滴滴滴：响 0.25s 停 0.75s。
+//        ★ 这一档完全绕开 DDS / ROM / 包络，只证明"数字音频能不能到耳朵"。
+//          如果这一档都听不到，那就是硬件（接线 / 插孔 / 编解码器），跟代码无关。
+//   档 1【小星星】循环播放《一闪一闪亮晶晶》（C 大调，120BPM，42 音 / 48 拍 = 24 秒
+//       一轮），带起音收尾包络，像八音盒。
+//   档 2【静音】送全 0，用来对比"到底是不是真的有声音"。
 //
 // LED 含义（板上只有这 2 颗用户灯，L6 不是灯！第 3 个亮的是 POWER 电源灯）：
 //   led[0] (D7/丝印LED4)  = PLL 锁定。常亮=MCLK 正常
@@ -70,17 +74,24 @@ module demo_es8388 #(
     // I2C 配置在 u_ctrl 内部（es8388_ctrl 已含 es8388_config，
     // 不要再单独例化一份，否则 scl/sda 双驱动综合报错）
 
-    // ---------- 按键换挡（50MHz 域）：440 / 1000 / C4 / 静音 ----------
+    // ---------- 按键换挡（50MHz 域）：方波 / 小星星 / 静音 ----------
     wire key_dn = ~key;                      // K6 低有效
     wire key_press;
     debounce_fsm #(.CLK_FREQ(CLK_FREQ)) u_db (
         .clk(clk), .rst_n(por_rst_n),
         .key_in(key_dn), .key_out(), .key_press(key_press)
     );
-    reg muted = 1'b0;                        // S1 一键静音（对比用）
+    // 上电先给最好辨认的满幅方波，确认链路后再按 S1 换小星星
+    reg [1:0] mode = 2'd0;                   // 0=方波 1=小星星 2=静音
     always @(posedge clk or negedge por_rst_n)
-        if (!por_rst_n)     muted <= 1'b0;
-        else if (key_press) muted <= ~muted;
+        if (!por_rst_n)     mode <= 2'd0;
+        else if (key_press) mode <= (mode == 2'd2) ? 2'd0 : mode + 1'b1;
+
+    // mode 跨时钟域到 BCLK 域（慢速人手信号，两级同步足够）
+    reg [1:0] mode_s0, mode_s1;
+    always @(posedge aud_bclk or negedge audio_rst_n)
+        if (!audio_rst_n) begin mode_s0 <= 2'd0; mode_s1 <= 2'd0; end
+        else              begin mode_s0 <= mode; mode_s1 <= mode_s0; end
 
     // ---------- BCLK 域：《一闪一闪亮晶晶》旋律播放器 ----------
     // fs = 48000.53Hz；120 BPM 下四分音符 0.5s = 24000 个样本。
@@ -181,10 +192,8 @@ module demo_es8388 #(
     always @* begin
         if      (scnt < ATT)      env = {1'b0, scnt[7:1]};      // 渐强
         else if (rel_left < REL)  env = {1'b0, rel_left[9:3]};  // 渐弱
-        else                      env = 9'd128;                   // 保持
+        else                      env = 9'd128;                 // 保持
     end
-
-    wire [8:0] gain = muted ? 9'd0 : env;    // S1 可一键静音做对比
 
     wire signed [15:0] dds_out;
     osc_dds #(
@@ -207,12 +216,31 @@ module demo_es8388 #(
 
     // Q15(16bit) × 包络(0~128) -> 24bit I2S。
     // 满幅 32767×128 ≈ 4.19e6 / 8.39e6 = 约 -6dB，够响又不炸耳。
-    wire signed [8:0]  gain_s = {1'b0, gain};
+    wire signed [8:0]  gain_s = {1'b0, env};
     wire signed [24:0] prod25 = dds_out * gain_s;
     wire signed [23:0] tone24 = prod25[23:0];
+    wire [31:0] dac_mel = {{8{tone24[23]}}, tone24};   // 符号扩展到 32bit
 
-    // 32bit 接口符号扩展（es8388_ctrl 约定低 24 位有效）
-    wire [31:0] dac_data = {{8{tone24[23]}}, tone24};
+    // ---------- 档 0：满幅 1kHz 方波（绕开 DDS/ROM/包络的"链路探针"）----------
+    // 48000 样本为一轮：前 12000(0.25s) 出方波，后 36000(0.75s) 出 0。
+    // 方波半周期 24 个样本 -> f = 48000/48 = 1000Hz。
+    reg [5:0]  sqp;                          // 0..47
+    reg [15:0] gcnt;                         // 0..47999
+    always @(posedge aud_bclk or negedge audio_rst_n)
+        if (!audio_rst_n) begin sqp <= 6'd0; gcnt <= 16'd0; end
+        else if (tick_new) begin
+            sqp  <= (sqp  == 6'd47)     ? 6'd0  : sqp  + 1'b1;
+            gcnt <= (gcnt == 16'd47999) ? 16'd0 : gcnt + 1'b1;
+        end
+    wire [23:0] sq24 = (gcnt < 16'd12000)
+                     ? ((sqp < 6'd24) ? 24'h7FFFFF : 24'h800000)
+                     : 24'h000000;
+    wire [31:0] dac_sq = {{8{sq24[23]}}, sq24};
+
+    // ---------- 三档选择 ----------
+    wire [31:0] dac_data = (mode_s1 == 2'd0) ? dac_sq  :   // 满幅方波（默认）
+                           (mode_s1 == 2'd1) ? dac_mel :   // 小星星
+                                               32'd0;      // 静音
 
     // ---------- ES8388 收发控制（内部含 I2C 配置 + I2S 收发）----------
     wire [31:0] adc_data;

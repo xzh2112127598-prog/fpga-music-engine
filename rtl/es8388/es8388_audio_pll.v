@@ -19,11 +19,30 @@
 //   = 精确 12.288MHz 的解，但 PFD=10MHz 低于 19MHz 下限被 PA2078 拒绝，
 //   PFD 限制下 50MHz 输入只能 IDIV=1 或 2，+11ppm 已是数学最优）
 //============================================================
+//============================================================
+// iverilog 仿真时定义 SIM_PLL_STUB 即可绕开 PLLA 原语（Icarus 不认识它），
+// 用一个 12.5MHz 分频 + 延时锁定信号代替。上板综合走下面的 PLLA 分支。
+//============================================================
 module es8388_audio_pll (
     input  wire clkin,          // 50MHz 板载晶振
     output wire clkout,         // 12.288MHz -> ES8388 MCLK
     output wire locked          // PLL 锁定指示
 );
+
+`ifdef SIM_PLL_STUB
+    reg [1:0] div      = 2'd0;
+    reg       clkout_r = 1'b0;
+    reg [7:0] lock_cnt = 8'd0;
+    reg       locked_r = 1'b0;
+    always @(posedge clkin) begin
+        div      <= div + 1'b1;
+        clkout_r <= (div == 2'd1);          // 50/4 = 12.5MHz，仿真够用
+        if (&lock_cnt) locked_r <= 1'b1;
+        else           lock_cnt <= lock_cnt + 1'b1;
+    end
+    assign clkout = clkout_r;
+    assign locked = locked_r;
+`else
 
     PLLA #(
         .FCLKIN         ("50.0"),
@@ -90,5 +109,7 @@ module es8388_audio_pll (
         .MDRDO       (),
         .LOCK        (locked)
     );
+
+`endif
 
 endmodule

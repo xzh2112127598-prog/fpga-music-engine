@@ -37,3 +37,4 @@ golden/rtl_trace.txt
 
 # 仿真产物
 *.vcd
+*.vvp
