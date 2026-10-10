@@ -34,3 +34,6 @@ golden/rtl_trace.txt
 
 # ---- Gowin 工程本地文件 ----
 *.gprj.user
+
+# 仿真产物
+*.vcd

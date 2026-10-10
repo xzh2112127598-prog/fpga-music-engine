@@ -7,8 +7,9 @@
 //   3) ES8388 工作在主机模式：BCLK/LRCK 由芯片产生回给 FPGA
 //   4) FPGA 用已验证的 osc_dds 在 BCLK 域产生正弦音，24bit I2S 送出
 //
-// 听到什么：耳机里 440Hz(A4) 正弦音；按 K6 循环切
-//   440Hz -> 1000Hz -> 261.6Hz(C4) -> 静音 -> 440Hz ...
+// 听到什么：耳机里循环播放《一闪一闪亮晶晶》（C 大调，120BPM，
+//   42 个音 / 48 拍 = 24 秒一轮），带起音收尾包络，像八音盒。
+//   按 S1(K6) 一键静音，用来对比"到底是不是真的有声音"。
 //
 // LED 含义（板上只有这 2 颗用户灯，L6 不是灯！第 3 个亮的是 POWER 电源灯）：
 //   led[0] (D7/丝印LED4)  = PLL 锁定。常亮=MCLK 正常
@@ -76,38 +77,27 @@ module demo_es8388 #(
         .clk(clk), .rst_n(por_rst_n),
         .key_in(key_dn), .key_out(), .key_press(key_press)
     );
-    reg [1:0] sel = 2'd0;                    // 0=A4 1=1k 2=C4 3=静音
+    reg muted = 1'b0;                        // S1 一键静音（对比用）
     always @(posedge clk or negedge por_rst_n)
-        if (!por_rst_n)   sel <= 2'd0;
-        else if (key_press) sel <= sel + 2'b01; // 2bit 自然回绕，第4挡即静音
+        if (!por_rst_n)     muted <= 1'b0;
+        else if (key_press) muted <= ~muted;
 
-    // ---------- BCLK 域：DDS 出样本 ----------
-    // fs = 48000.53Hz（MCLK +11ppm 所致），FTW = round(f×2^32/48000.53)
-    localparam [31:0] FTW_A4  = 32'd39370099;  // 440.0000 Hz
-    localparam [31:0] FTW_1K  = 32'd89477498;  // 1000.0000 Hz
-    localparam [31:0] FTW_C4  = 32'd23409601;  // 261.6256 Hz
+    // ---------- BCLK 域：《一闪一闪亮晶晶》旋律播放器 ----------
+    // fs = 48000.53Hz；120 BPM 下四分音符 0.5s = 24000 个样本。
+    // 全曲 42 个音 / 48 拍 = 24 秒，播完自动循环。
+    localparam [15:0] BEAT     = 16'd24000;   // 四分音符
+    localparam [15:0] TWO_BEAT = 16'd48000;   // 二分音符
+    localparam [15:0] ATT      = 16'd256;     // 起音 ~5.3ms（去爆音）
+    localparam [15:0] REL      = 16'd1024;    // 收尾 ~21ms
+    localparam [5:0]  NLAST    = 6'd41;       // 索引 0~41
 
-    // 2bit 慢变信号打两拍同步进 BCLK 域（换挡瞬间最多响一个样本的杂音）
-    reg [1:0] sel_b1, sel_b2;
-    always @(posedge aud_bclk or negedge audio_rst_n) begin
-        if (!audio_rst_n) begin
-            sel_b1 <= 2'd0;
-            sel_b2 <= 2'd0;
-        end else begin
-            sel_b1 <= sel;
-            sel_b2 <= sel_b1;
-        end
-    end
-
-    reg [31:0] ftw;
-    always @* begin
-        case (sel_b2)
-            2'd0:    ftw = FTW_A4;
-            2'd1:    ftw = FTW_1K;
-            2'd2:    ftw = FTW_C4;
-            default: ftw = 32'd0;            // 静音（DDS 输出恒 0）
-        endcase
-    end
+    // 音高频率字（FTW = round(f × 2^32 / 48000.53)）
+    localparam [31:0] FTW_C = 32'd23409601;   // C4 261.63Hz
+    localparam [31:0] FTW_D = 32'd26276389;   // D4 293.66Hz
+    localparam [31:0] FTW_E = 32'd29494249;   // E4 329.63Hz
+    localparam [31:0] FTW_F = 32'd31248068;   // F4 349.23Hz
+    localparam [31:0] FTW_G = 32'd35074771;   // G4 392.00Hz
+    localparam [31:0] FTW_A = 32'd39370099;   // A4 440.00Hz
 
     // LRCK 边沿检测：aud_lrc 0->1 是"进入右声道"时刻，此刻产生新样本，
     // 半个样本周期后（进入左声道）audio_send_mono 会来锁存它
@@ -117,6 +107,84 @@ module demo_es8388 #(
         else              lrc_d <= aud_lrc;
     wire lrc_edge  = aud_lrc ^ lrc_d;
     wire tick_new  = lrc_edge & aud_lrc;     // 每样本一次
+
+    // 音符表：音高 + 时长
+    reg [5:0]  note_idx;
+    reg [16:0] scnt;                         // 当前音已持续的样本数
+    reg [31:0] m_ftw;
+    reg [15:0] dur;
+    always @* begin
+        case (note_idx)
+            6'd0 : begin m_ftw = FTW_C; dur = BEAT; end
+            6'd1 : begin m_ftw = FTW_C; dur = BEAT; end
+            6'd2 : begin m_ftw = FTW_G; dur = BEAT; end
+            6'd3 : begin m_ftw = FTW_G; dur = BEAT; end
+            6'd4 : begin m_ftw = FTW_A; dur = BEAT; end
+            6'd5 : begin m_ftw = FTW_A; dur = BEAT; end
+            6'd6 : begin m_ftw = FTW_G; dur = TWO_BEAT; end
+            6'd7 : begin m_ftw = FTW_F; dur = BEAT; end
+            6'd8 : begin m_ftw = FTW_F; dur = BEAT; end
+            6'd9 : begin m_ftw = FTW_E; dur = BEAT; end
+            6'd10: begin m_ftw = FTW_E; dur = BEAT; end
+            6'd11: begin m_ftw = FTW_D; dur = BEAT; end
+            6'd12: begin m_ftw = FTW_D; dur = BEAT; end
+            6'd13: begin m_ftw = FTW_C; dur = TWO_BEAT; end
+            6'd14: begin m_ftw = FTW_G; dur = BEAT; end
+            6'd15: begin m_ftw = FTW_G; dur = BEAT; end
+            6'd16: begin m_ftw = FTW_F; dur = BEAT; end
+            6'd17: begin m_ftw = FTW_F; dur = BEAT; end
+            6'd18: begin m_ftw = FTW_E; dur = BEAT; end
+            6'd19: begin m_ftw = FTW_E; dur = BEAT; end
+            6'd20: begin m_ftw = FTW_D; dur = TWO_BEAT; end
+            6'd21: begin m_ftw = FTW_G; dur = BEAT; end
+            6'd22: begin m_ftw = FTW_G; dur = BEAT; end
+            6'd23: begin m_ftw = FTW_F; dur = BEAT; end
+            6'd24: begin m_ftw = FTW_F; dur = BEAT; end
+            6'd25: begin m_ftw = FTW_E; dur = BEAT; end
+            6'd26: begin m_ftw = FTW_E; dur = BEAT; end
+            6'd27: begin m_ftw = FTW_D; dur = TWO_BEAT; end
+            6'd28: begin m_ftw = FTW_C; dur = BEAT; end
+            6'd29: begin m_ftw = FTW_C; dur = BEAT; end
+            6'd30: begin m_ftw = FTW_G; dur = BEAT; end
+            6'd31: begin m_ftw = FTW_G; dur = BEAT; end
+            6'd32: begin m_ftw = FTW_A; dur = BEAT; end
+            6'd33: begin m_ftw = FTW_A; dur = BEAT; end
+            6'd34: begin m_ftw = FTW_G; dur = TWO_BEAT; end
+            6'd35: begin m_ftw = FTW_F; dur = BEAT; end
+            6'd36: begin m_ftw = FTW_F; dur = BEAT; end
+            6'd37: begin m_ftw = FTW_E; dur = BEAT; end
+            6'd38: begin m_ftw = FTW_E; dur = BEAT; end
+            6'd39: begin m_ftw = FTW_D; dur = BEAT; end
+            6'd40: begin m_ftw = FTW_D; dur = BEAT; end
+            6'd41: begin m_ftw = FTW_C; dur = TWO_BEAT; end
+            default: begin m_ftw = FTW_C; dur = BEAT; end
+        endcase
+    end
+
+    // 音符推进：当前音的样本数走满就换下一个音，最后一个音后回到开头
+    always @(posedge aud_bclk or negedge audio_rst_n) begin
+        if (!audio_rst_n) begin
+            note_idx <= 6'd0;
+            scnt     <= 17'd0;
+        end else if (tick_new) begin
+            if (scnt + 1'b1 >= dur) begin
+                scnt     <= 17'd0;
+                note_idx <= (note_idx == NLAST) ? 6'd0 : note_idx + 1'b1;
+            end else
+                scnt <= scnt + 1'b1;
+        end
+    end
+
+    // 包络：起音渐强 / 收尾渐弱，全部用移位实现（不引除法器）
+    wire [16:0] rel_left = dur - scnt;
+    reg  [8:0]  env;                         // 0~128
+    always @* begin
+        if      (scnt < ATT)      env = {1'b0, scnt[7:1]};      // 渐强
+        else if (rel_left < REL)  env = {1'b0, rel_left[9:3]};  // 渐弱
+        else                      env = 9'd128;                   // 保持
+    end
+
+    wire [8:0] gain = muted ? 9'd0 : env;    // S1 可一键静音做对比
 
     wire signed [15:0] dds_out;
     osc_dds #(
@@ -129,7 +197,7 @@ module demo_es8388 #(
         .clk      (aud_bclk),
         .rst_n    (audio_rst_n),
         .en       (tick_new),
-        .ftw      (ftw),
+        .ftw      (m_ftw),
         .load     (1'b0),
         .phase_i  (32'd0),
         .out      (dds_out),
@@ -137,10 +205,11 @@ module demo_es8388 #(
         .phase_o  ()
     );
 
-    // Q15(16bit) -> 24bit，音量 -12dB：先把符号扩到 24 位（×256），再算术右移 2 位。
-    // 结果 = dds_out × 64，正弦满幅 32767 -> 约 1/4 满度，保护耳朵；
-    // 要更响可改成 {{8{dds_out[15]}}, dds_out}（0dB，注意别削顶）。
-    wire signed [23:0] tone24 = {{10{dds_out[15]}}, dds_out[15:2]};
+    // Q15(16bit) × 包络(0~128) -> 24bit I2S。
+    // 满幅 32767×128 ≈ 4.19e6 / 8.39e6 = 约 -6dB，够响又不炸耳。
+    wire signed [8:0]  gain_s = {1'b0, gain};
+    wire signed [24:0] prod25 = dds_out * gain_s;
+    wire signed [23:0] tone24 = prod25[23:0];
 
     // 32bit 接口符号扩展（es8388_ctrl 约定低 24 位有效）
     wire [31:0] dac_data = {{8{tone24[23]}}, tone24};
