@@ -17,12 +17,12 @@
 //
 // LED 含义（板上只有这 2 颗用户灯，L6 不是灯！第 3 个亮的是 POWER 电源灯）：
 //   led[0] (D7/丝印LED4)  = PLL 锁定。常亮=MCLK 正常
-//   led[1] (E8/丝印LED3)  = 链路状态，见下面三档：
-//        慢闪 1Hz  = 24 个寄存器还没写完
-//        快闪 12Hz = 写完了但 I2C 没收到 ACK，或芯片没吐 BCLK/LRCK
-//        常亮      = 24 字节全部 ACK 正常 + BCLK 有跳动 → 耳机应有 440Hz
-//     ★ 注意：参考工程的 I2C 驱动原本完全不看 ACK，所以"没接芯片"和
-//       "配置成功"表现一样。本工程已补上 ACK 采样，灯才是可信的。
+//   led[1] (E8/丝印LED3)  = 链路状态，五档：
+//        慢闪  1.5Hz = 24 个寄存器还没写完
+//        中闪  6Hz   = I2C 没收到 ACK（固件每 0.5s 自动重试）
+//        快闪  24Hz  = 寄存器写进去了，但 BCLK 没出来
+//        常灭        = BCLK 有、LRCK 没有（以前没这档，坑过一次）
+//        常亮        = 全部正常
 //
 // 接线（全部在 J6 这个 PMOD 上，和 MPU6050 共存，I2C 共用 G5/F5）：
 //   模块 J0(TSW-112-07-G-D 2x12 排针，丝印1=方焊盘)
@@ -283,6 +283,24 @@ module demo_es8388 #(
         else if (bclk_wd != 18'h3FFFF) bclk_wd <= bclk_wd + 1'b1;
     wire bclk_alive = (bclk_wd < 18'd50000);      // 50MHz 下 50000 = 1ms
 
+    // ---------- LRCK 心跳检测（50MHz 域）----------
+    // ⚠️ 这是个曾经坑过人的漏洞：只查 BCLK 不查 LRCK 的话，模块 6 脚 LRCK
+    //    没接好时 lrc_edge 恒为 0 -> DDS 不推进、方波计数器不动、dac_data_t
+    //    恒 0 -> 全程静音，但 BCLK 还在跳，LED 会"全部常亮"骗人。
+    //    LRCK 是 48kHz，1ms 内必有边沿，所以和 BCLK 用同一个看门狗窗口。
+    reg [2:0] lrc_sync;
+    always @(posedge clk or negedge por_rst_n)
+        if (!por_rst_n) lrc_sync <= 3'b000;
+        else            lrc_sync <= {lrc_sync[1:0], aud_lrc};
+    wire lrc_edge50 = lrc_sync[2] ^ lrc_sync[1];
+
+    reg [17:0] lrc_wd;
+    always @(posedge clk or negedge por_rst_n)
+        if (!por_rst_n)        lrc_wd <= 18'd0;
+        else if (lrc_edge50)   lrc_wd <= 18'd0;
+        else if (lrc_wd != 18'h3FFFF) lrc_wd <= lrc_wd + 1'b1;
+    wire lrc_alive = (lrc_wd < 18'd50000);
+
     // ---------- LED ----------
     // D7（丝印 LED4）：PLL 锁定，常亮 = MCLK 12.288MHz 已产生
     assign led[0] = pll_locked;
@@ -292,14 +310,17 @@ module demo_es8388 #(
     //   中闪 ~6Hz   = 芯片没应答（ACK 错，固件每 0.5s 自动重试）
     //                 → 查 3.3V/GND、SCL/SDA 是否接反或接触不良
     //   快闪 ~24Hz  = 芯片应答了、寄存器写进去了，但 BCLK 没出来
-    //                 → 查模块 10 脚(SCLK)到 J6 pin6 的线
-    //   常亮        = 全 ACK 正常 + BCLK 有跳动 → 耳机应有《小星星》
+    //                 → 查模块 10 脚(SCLK)到 J6 pin6(J5) 的线
+    //   常灭        = BCLK 有了但 LRCK 没跳动 → 查模块 6 脚到 J6 pin7(H8)
+    //                 （这档以前没有，导致过"灯全亮却静音"被误判成别的故障）
+    //   常亮        = 全部正常 → 耳机应有方波/旋律
     wire slow_blink = hb_cnt[25];            // ~1.5Hz
     wire mid_blink  = hb_cnt[23];            // ~6Hz
     wire fast_blink = hb_cnt[21];            // ~24Hz
     assign led[1] = !cfg_done     ? slow_blink :
                     cfg_ack_err   ? mid_blink  :
-                    !bclk_alive   ? fast_blink : 1'b1;
+                    !bclk_alive   ? fast_blink :
+                    !lrc_alive    ? 1'b0       : 1'b1;
 
     reg [25:0] hb_cnt = 26'd0;
     always @(posedge clk) hb_cnt <= hb_cnt + 1'b1;
