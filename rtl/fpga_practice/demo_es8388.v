@@ -340,8 +340,15 @@ module demo_es8388 #(
                      !bclk_alive   ? fast_blink :
                      !lrc_alive    ? 1'b0       : 1'b1;
 
-    // 按键反馈优先：0.25s 内两灯互补快闪，之后恢复成上面的正常显示
-    assign led[0] = ack_act ?  ack_blink : pll_locked;
+    // 按键反馈优先：0.25s 内两灯互补快闪，之后恢复成下面的正常显示
+    //
+    // D7：链路没通时 = PLL 锁定；**链路全通后改显当前档位**（持续可见，
+    //   不用去盯那 0.25s 的闪）——档0方波=常亮 / 档1旋律=慢闪1.5Hz / 档2静音=灭
+    // E8：链路分诊五档（见上）
+    wire link_ok = cfg_done & ~cfg_ack_err & bclk_alive & lrc_alive;
+    wire mode_led = (mode == 2'd0) ? 1'b1       :
+                    (mode == 2'd1) ? slow_blink : 1'b0;
+    assign led[0] = ack_act ?  ack_blink : (link_ok ? mode_led : pll_locked);
     assign led[1] = ack_act ? ~ack_blink : led1_norm;
 
     reg [25:0] hb_cnt = 26'd0;
