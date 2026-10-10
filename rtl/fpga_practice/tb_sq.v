@@ -16,7 +16,8 @@ module tb_sq;
     reg  clk = 1'b0;
     reg  aud_bclk = 1'b0;
     reg  aud_lrc  = 1'b0;
-    reg  key = 1'b1;                 // 低有效，常态未按
+    reg  key = 1'b1;                 // K6 低有效，常态未按
+    reg  key2 = 1'b0;                // H11 高有效，常态未按
     reg  aud_adcdat = 1'b0;
     wire [1:0] led;
     wire aud_mclk, aud_dacdat, aud_scl;
@@ -27,6 +28,7 @@ module tb_sq;
     demo_es8388 u_dut (
         .clk        (clk),
         .key        (key),
+        .key2       (key2),
         .led        (led),
         .aud_mclk   (aud_mclk),
         .aud_bclk   (aud_bclk),

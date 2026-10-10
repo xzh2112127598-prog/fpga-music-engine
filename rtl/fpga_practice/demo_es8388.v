@@ -45,6 +45,7 @@ module demo_es8388 #(
 )(
     input  wire       clk,        // E2, 50MHz
     input  wire       key,        // K6, 低有效（按下=0）
+    input  wire       key2,       // H11, 高有效（按下=1）
     output wire [1:0] led,        // [0]=D7, [1]=E8
     output wire       aud_mclk,   // H5
     input  wire       aud_bclk,   // J5
@@ -75,17 +76,36 @@ module demo_es8388 #(
     // 不要再单独例化一份，否则 scl/sda 双驱动综合报错）
 
     // ---------- 按键换挡（50MHz 域）：方波 / 小星星 / 静音 ----------
-    wire key_dn = ~key;                      // K6 低有效
+    // ⚠️ 板上有 2 个按键（K6 低有效、H11 高有效），丝印不印球号，
+    //    2026-10-11 之前只接了 K6，按另一个键毫无反应，被误判成"切档没生效"。
+    //    现在两个并联，按任意一个都能换挡（与 led_top.v 同样处理）。
+    wire key_high = (~key) | key2;       // 统一成"高=按下"
     wire key_press;
     debounce_fsm #(.CLK_FREQ(CLK_FREQ)) u_db (
         .clk(clk), .rst_n(por_rst_n),
-        .key_in(key_dn), .key_out(), .key_press(key_press)
+        .key_in(key_high), .key_out(), .key_press(key_press)
     );
     // 上电先给最好辨认的满幅方波，确认链路后再按 S1 换小星星
     reg [1:0] mode = 2'd0;                   // 0=方波 1=小星星 2=静音
     always @(posedge clk or negedge por_rst_n)
         if (!por_rst_n)     mode <= 2'd0;
         else if (key_press) mode <= (mode == 2'd2) ? 2'd0 : mode + 1'b1;
+
+    // ---------- 按键确认反馈：按下后 0.25s 内两灯互补快闪 ----------
+    // 有了这个就能一眼分开两种"没变化"：灯闪了=按键和切档都生效（那是音源
+    // 本身的问题）；灯不闪=按的键没接到 / 消抖没过。
+    reg [23:0] ack_cnt = 24'd0;
+    reg        ack_act = 1'b0;
+    always @(posedge clk or negedge por_rst_n)
+        if (!por_rst_n) begin
+            ack_act <= 1'b0; ack_cnt <= 24'd0;
+        end else if (key_press) begin
+            ack_act <= 1'b1; ack_cnt <= 24'd0;
+        end else if (ack_act) begin
+            if (ack_cnt == 24'd12_500_000) ack_act <= 1'b0;   // 0.25s
+            else                           ack_cnt <= ack_cnt + 1'b1;
+        end
+    wire ack_blink = ack_cnt[22];            // ~12Hz，0.25s 内闪 3 下
 
     // mode 跨时钟域到 BCLK 域（慢速人手信号，两级同步足够）
     reg [1:0] mode_s0, mode_s1;
@@ -303,9 +323,7 @@ module demo_es8388 #(
 
     // ---------- LED ----------
     // D7（丝印 LED4）：PLL 锁定，常亮 = MCLK 12.288MHz 已产生
-    assign led[0] = pll_locked;
-
-    // E8（丝印 LED3）：链路分诊，四档（排查问题时全靠它）
+    // E8（丝印 LED3）：链路分诊，五档（排查问题时全靠它）
     //   慢闪 ~1.5Hz = 24 个寄存器还没写完（正常只出现一两秒）
     //   中闪 ~6Hz   = 芯片没应答（ACK 错，固件每 0.5s 自动重试）
     //                 → 查 3.3V/GND、SCL/SDA 是否接反或接触不良
@@ -317,10 +335,14 @@ module demo_es8388 #(
     wire slow_blink = hb_cnt[25];            // ~1.5Hz
     wire mid_blink  = hb_cnt[23];            // ~6Hz
     wire fast_blink = hb_cnt[21];            // ~24Hz
-    assign led[1] = !cfg_done     ? slow_blink :
-                    cfg_ack_err   ? mid_blink  :
-                    !bclk_alive   ? fast_blink :
-                    !lrc_alive    ? 1'b0       : 1'b1;
+    wire led1_norm = !cfg_done     ? slow_blink :
+                     cfg_ack_err   ? mid_blink  :
+                     !bclk_alive   ? fast_blink :
+                     !lrc_alive    ? 1'b0       : 1'b1;
+
+    // 按键反馈优先：0.25s 内两灯互补快闪，之后恢复成上面的正常显示
+    assign led[0] = ack_act ?  ack_blink : pll_locked;
+    assign led[1] = ack_act ? ~ack_blink : led1_norm;
 
     reg [25:0] hb_cnt = 26'd0;
     always @(posedge clk) hb_cnt <= hb_cnt + 1'b1;
