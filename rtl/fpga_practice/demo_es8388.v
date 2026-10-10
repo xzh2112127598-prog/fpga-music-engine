@@ -44,8 +44,8 @@ module demo_es8388 #(
     parameter integer CLK_FREQ = 50_000_000
 )(
     input  wire       clk,        // E2, 50MHz
-    input  wire       key,        // K6, 低有效（按下=0）
-    input  wire       key2,       // H11, 高有效（按下=1）
+    input  wire       key_s1,     // H11 —— 板子丝印 S1，高有效（key_probe 实测）
+    input  wire       key_s2,     // H10 —— 板子丝印 S2，高有效（与 S1 同电路，推测）
     output wire [1:0] led,        // [0]=D7, [1]=E8
     output wire       aud_mclk,   // H5
     input  wire       aud_bclk,   // J5
@@ -85,17 +85,17 @@ module demo_es8388 #(
     //    上电 10ms 后就卡死在"已按下"，**另一个键再按也不会产生脉冲**。
     //    这就是"按 S1 毫无反应"的真正原因（不是消抖、不是档位逻辑）。
     //
-    //    修法：两个脚**各自独立消抖**再 OR 脉冲，任何一个脚电平异常都不会
+    //    修法：每个脚**各自独立消抖**再 OR 脉冲，任何一个脚电平异常都不会
     //    拖累另一个；再加 0.2s 上电屏蔽，防止异常电平被当成一次"按下"
-    //    导致一上电就跳档。
-    wire press_k6, press_h11;
-    debounce_fsm #(.CLK_FREQ(CLK_FREQ)) u_db_k6 (
+    //    导致一上电就跳档。K6 实测不是按键，已从设计中移除。
+    wire press_s1, press_s2;
+    debounce_fsm #(.CLK_FREQ(CLK_FREQ)) u_db_s1 (
         .clk(clk), .rst_n(por_rst_n),
-        .key_in(~key), .key_out(), .key_press(press_k6)   // K6：低有效（若真是键）
+        .key_in(key_s1), .key_out(), .key_press(press_s1)   // S1=H11，高有效（实测）
     );
-    debounce_fsm #(.CLK_FREQ(CLK_FREQ)) u_db_h11 (
+    debounce_fsm #(.CLK_FREQ(CLK_FREQ)) u_db_s2 (
         .clk(clk), .rst_n(por_rst_n),
-        .key_in(key2), .key_out(), .key_press(press_h11)  // H11/S1：高有效（已实测）
+        .key_in(key_s2), .key_out(), .key_press(press_s2)   // S2=H10，高有效（推测）
     );
     reg [23:0] boot_cnt  = 24'd0;
     reg        boot_gate = 1'b0;
@@ -106,7 +106,7 @@ module demo_es8388 #(
             boot_gate <= 1'b1;                            // 上电 0.2s 后放行
         end else
             boot_cnt <= boot_cnt + 1'b1;
-    wire key_press = boot_gate & (press_k6 | press_h11);
+    wire key_press = boot_gate & (press_s1 | press_s2);
 
     // 上电先给最好辨认的满幅方波，确认链路后再按 S1 换小星星
     reg [1:0] mode = 2'd0;                   // 0=方波 1=小星星 2=静音
