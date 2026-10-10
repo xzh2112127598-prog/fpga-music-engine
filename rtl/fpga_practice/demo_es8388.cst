@@ -1,0 +1,23 @@
+//============================================================
+// demo_es8388.cst —— ES8388 声卡验证 引脚约束（Tang Primer 25K）
+//
+// 全部走 J6 PMOD（上边缘最左、靠 USB-A 那端，pin1=方焊盘）：
+//   J6: pin1/2=3V3  pin3/4=GND  pin5=H5  pin6=J5  pin7=H8
+//       pin8=H7  pin9=G7  pin10=G8  pin11=F5  pin12=G5
+// MPU6050 仍可同时接在 J6 的 pin11/12（I2C 共总线，地址不冲突：
+// ES8388=0x10 / MPU6050=0x68），但本 demo 的位流里不含 MPU6050 逻辑。
+//============================================================
+
+IO_LOC "clk" E2;                        // 50MHz 有源晶振
+IO_LOC "led[0]" D7;                     // 丝印 LED4（DONE 脚，需开复用）
+IO_LOC "led[1]" E8;                     // 丝印 LED3（READY 脚，需开复用）
+
+IO_LOC "aud_mclk" H5;                   // J6 pin5  -> 模块12 I2S_MCLK
+IO_LOC "aud_bclk" J5;                   // J6 pin6  <- 模块10 I2S_SCLK
+IO_LOC "aud_lrc"  H8;                   // J6 pin7  <- 模块 6 I2S_LRCK
+IO_LOC "aud_dacdat" H7;                 // J6 pin8  -> 模块 8 I2S_SDIN
+IO_LOC "aud_adcdat" G7;                 // J6 pin9  <- 模块 4 I2S_SDOUT
+IO_LOC "aud_scl"  G5;                   // J6 pin12 -> 模块14 I2C_SCL
+IO_LOC "aud_sda"  F5;                   // J6 pin11 <-> 模块16 I2C_SDA
+
+IO_LOC "key" K6;                        // S1，低有效，板载上拉
