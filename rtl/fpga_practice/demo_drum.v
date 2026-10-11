@@ -15,9 +15,20 @@
 //   ES8388  —— 走 J6（保持 demo_es8388 的接法不变）
 //   MPU6050 —— 走 J5：VCC=pin1/2(3V3)  GND=pin3/4  SCL=pin12(A10)  SDA=pin11(A11)
 //
+// 两种模式，按 S1 或 S2 切换：
+//   【敲击模式·默认】敲 MPU6050 模块或它所在的桌面 -> 出对应鼓件声
+//   【自动演示模式】不用敲，每 0.6s 自动依次触发 底鼓→军鼓→镲 循环。
+//        ★ 用来确认"听到的噪声到底是不是镲"——镲的音源本来就是白噪声，
+//          第一次听很容易以为链路坏了。自动模式下三声挨着放，一耳朵就能分清。
+//
 // LED：
-//   led[0] (D7/丝印LED4) = ES8388 链路。常亮=OK，慢闪=还没配好
-//   led[1] (E8/丝印LED3) = 敲击指示，敲一下亮 150ms；
+//   led[0] (D7/丝印LED4) = ES8388 链路分诊五档：
+//        慢闪 0.75Hz = 24 个寄存器还没写完
+//        快闪 12Hz   = 写完了但 BCLK 没出来   -> 查模块10脚(SCLK)→J6 pin6(J5)
+//        常灭        = BCLK 有、LRCK 没跳动   -> 查模块 6脚(LRCK)→J6 pin7(H8)
+//        中闪 6Hz    = 链路在跑但曾出现 NACK（固件每 0.5s 自动重试）
+//        常亮        = 全部正常
+//   led[1] (E8/丝印LED3) = 触发指示，敲一下（或自动演示一次）亮 150ms；
 //                          MPU6050 出 ACK 错误时改成快闪
 //
 // ⚠️ 板载按键必须在 .cst 里显式 PULL_MODE=DOWN（见 demo_drum.cst 注释），
@@ -60,6 +71,37 @@ module demo_drum #(
         .locked (pll_locked)
     );
     wire audio_rst_n = por_rst_n & pll_locked;
+
+    // ---------- 按键：切换「敲击模式 / 自动演示模式」----------
+    // ⚠️ 两个键各自独立消抖（一个脚电平异常不会拖累另一个），
+    //    且必须在 .cst 里显式 PULL_MODE=DOWN，否则引脚浮空会失灵。
+    wire press_s1, press_s2;
+    debounce_fsm #(.CLK_FREQ(CLK_FREQ)) u_db_s1 (
+        .clk(clk), .rst_n(por_rst_n),
+        .key_in(key_s1), .key_out(), .key_press(press_s1)
+    );
+    debounce_fsm #(.CLK_FREQ(CLK_FREQ)) u_db_s2 (
+        .clk(clk), .rst_n(por_rst_n),
+        .key_in(key_s2), .key_out(), .key_press(press_s2)
+    );
+    reg auto_mode = 1'b0;                // 0=敲击触发  1=自动循环演示三鼓件
+    always @(posedge clk or negedge por_rst_n)
+        if (!por_rst_n) auto_mode <= 1'b0;
+        else if (press_s1 | press_s2) auto_mode <= ~auto_mode;
+
+    // ---------- 自动演示：每 0.6s 依次触发 底鼓→军鼓→镲 ----------
+    // 用途：不用敲也能听清三个鼓件各自是什么声，确认"噪声"到底是不是镲。
+    reg [1:0]  demo_idx = 2'd0;
+    reg [25:0] demo_cnt = 26'd0;
+    wire       demo_tick = (demo_cnt == 26'd30_000_000);      // 0.6s @50MHz
+    always @(posedge clk or negedge por_rst_n)
+        if (!por_rst_n) begin
+            demo_idx <= 2'd0; demo_cnt <= 26'd0;
+        end else if (demo_tick) begin
+            demo_cnt <= 26'd0;
+            demo_idx <= (demo_idx == 2'd2) ? 2'd0 : demo_idx + 1'b1;
+        end else
+            demo_cnt <= demo_cnt + 1'b1;
 
     // ---------- MPU6050（50MHz 域，独立 I2C）----------
     wire [15:0] ax, ay, az;
@@ -105,23 +147,28 @@ module demo_drum #(
     // 以下全部在 BCLK 域（2.304MHz = 48kHz × 2ch × 24bit）
     // =========================================================
 
-    // ---------- 50MHz -> BCLK：敲击事件（toggle 法跨时钟域）----------
-    reg hit_tgl = 1'b0;
+    // ---------- 触发源：敲击 或 自动演示 ----------
+    wire        trig      = auto_mode ? demo_tick        : hit_valid;
+    wire [1:0]  trig_type = auto_mode ? (demo_idx + 2'd1) : hit_type;  // 1底鼓/2军鼓/3镲
+    wire [6:0]  trig_vel  = auto_mode ? 7'd100            : hit_vel;
+
+    // ---------- 50MHz -> BCLK：触发事件（toggle 法跨时钟域）----------
+    reg trig_tgl = 1'b0;
     always @(posedge clk or negedge por_rst_n)
-        if (!por_rst_n) hit_tgl <= 1'b0;
-        else if (hit_valid) hit_tgl <= ~hit_tgl;
+        if (!por_rst_n) trig_tgl <= 1'b0;
+        else if (trig)  trig_tgl <= ~trig_tgl;
 
     reg [2:0] hit_sync;
     always @(posedge aud_bclk or negedge audio_rst_n)
         if (!audio_rst_n) hit_sync <= 3'b000;
-        else              hit_sync <= {hit_sync[1:0], hit_tgl};
+        else              hit_sync <= {hit_sync[1:0], trig_tgl};
     wire hit_ev = hit_sync[2] ^ hit_sync[1];
 
     // 类型/力度是慢变信号，两级同步即可（音频上短暂不一致无所谓）
     reg [8:0] tv_s0, tv_s1;
     always @(posedge aud_bclk or negedge audio_rst_n)
         if (!audio_rst_n) begin tv_s0 <= 9'd0; tv_s1 <= 9'd0; end
-        else              begin tv_s0 <= {hit_type, hit_vel}; tv_s1 <= tv_s0; end
+        else              begin tv_s0 <= {trig_type, trig_vel}; tv_s1 <= tv_s0; end
     wire [1:0] cur_type = tv_s1[8:7];
     wire [6:0] cur_vel  = tv_s1[6:0];
 
@@ -224,27 +271,64 @@ module demo_drum #(
         .cfg_ack_err(cfg_ack_err)
     );
 
+    // ---------- BCLK / LRCK 心跳（50MHz 域，1ms 看门狗）----------
+    // 没有耳机时，芯片到底起没起振只能靠这个判断。
+    reg [2:0] bclk_sync;
+    always @(posedge clk or negedge por_rst_n)
+        if (!por_rst_n) bclk_sync <= 3'b000;
+        else            bclk_sync <= {bclk_sync[1:0], aud_bclk};
+    wire bclk_edge = bclk_sync[2] ^ bclk_sync[1];
+    reg [17:0] bclk_wd;
+    always @(posedge clk or negedge por_rst_n)
+        if (!por_rst_n)     bclk_wd <= 18'd0;
+        else if (bclk_edge) bclk_wd <= 18'd0;
+        else if (bclk_wd != 18'h3FFFF) bclk_wd <= bclk_wd + 1'b1;
+    wire bclk_alive = (bclk_wd < 18'd50000);
+
+    reg [2:0] lrc_sync;
+    always @(posedge clk or negedge por_rst_n)
+        if (!por_rst_n) lrc_sync <= 3'b000;
+        else            lrc_sync <= {lrc_sync[1:0], aud_lrc};
+    wire lrc_edge50 = lrc_sync[2] ^ lrc_sync[1];
+    reg [17:0] lrc_wd;
+    always @(posedge clk or negedge por_rst_n)
+        if (!por_rst_n)        lrc_wd <= 18'd0;
+        else if (lrc_edge50)   lrc_wd <= 18'd0;
+        else if (lrc_wd != 18'h3FFFF) lrc_wd <= lrc_wd + 1'b1;
+    wire lrc_alive = (lrc_wd < 18'd50000);
+
     // ---------- LED ----------
     reg [25:0] hb = 26'd0;
     always @(posedge clk) hb <= hb + 1'b1;
     wire slow_blink = hb[25];            // ~0.75Hz
+    wire mid_blink  = hb[23];            // ~6Hz
     wire fast_blink = hb[21];            // ~12Hz
 
-    // 敲击指示：敲一下亮 150ms
+    // 触发指示：敲一下（或自动演示一次）亮 150ms
     reg [22:0] hit_led_cnt = 23'd0;
     reg        hit_led = 1'b0;
     always @(posedge clk or negedge por_rst_n)
         if (!por_rst_n) begin
             hit_led <= 1'b0; hit_led_cnt <= 23'd0;
-        end else if (hit_valid) begin
+        end else if (trig) begin
             hit_led <= 1'b1; hit_led_cnt <= 23'd0;
         end else if (hit_led) begin
             if (hit_led_cnt == 23'd7_500_000) hit_led <= 1'b0;   // 150ms
             else                              hit_led_cnt <= hit_led_cnt + 1'b1;
         end
 
-    wire es_ok = pll_locked & cfg_done & ~cfg_ack_err;
-    assign led[0] = es_ok    ? 1'b1        : slow_blink;
-    assign led[1] = imu_err  ? fast_blink  : hit_led;
+    // D7 = ES8388 链路分诊五档（排查"没声音"全靠它）：
+    //   慢闪 0.75Hz = 24 个寄存器还没写完
+    //   快闪 12Hz   = 写完了但 BCLK 没出来      -> 查模块10脚(SCLK)→J6 pin6
+    //   常灭        = BCLK 有但 LRCK 没跳动      -> 查模块 6脚(LRCK)→J6 pin7
+    //   中闪 6Hz    = 链路在跑，但曾经出现过 NACK（固件每 0.5s 自动重试）
+    //   常亮        = 全部正常
+    assign led[0] = !cfg_done   ? slow_blink :
+                    !bclk_alive ? fast_blink :
+                    !lrc_alive  ? 1'b0       :
+                    cfg_ack_err ? mid_blink  : 1'b1;
+
+    // E8 = 触发指示；MPU6050 出 ACK 错误时改成快闪
+    assign led[1] = imu_err ? fast_blink : hit_led;
 
 endmodule
