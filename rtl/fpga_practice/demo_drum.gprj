@@ -1,0 +1,23 @@
+<?xml version="1" encoding="UTF-8"?>
+<!DOCTYPE gowin-fpga-project>
+<Project>
+    <Template>FPGA</Template>
+    <Version>5</Version>
+    <Device name="GW5A-25" pn="GW5A-LV25MG121NC1/I0">gw5a25a-002</Device>
+    <FileList>
+        <File path="demo_drum.v" type="file.verilog" enable="1"/>
+        <File path="../es8388/es8388_audio_pll.v" type="file.verilog" enable="1"/>
+        <File path="../es8388/es8388_config.v" type="file.verilog" enable="1"/>
+        <File path="../es8388/es8388_ctrl.v" type="file.verilog" enable="1"/>
+        <File path="../es8388/i2c_dri.v" type="file.verilog" enable="1"/>
+        <File path="../es8388/i2c_reg_cfg.v" type="file.verilog" enable="1"/>
+        <File path="../es8388/audio_receive.v" type="file.verilog" enable="1"/>
+        <File path="../es8388/audio_send_mono.v" type="file.verilog" enable="1"/>
+        <File path="../src/osc_dds.v" type="file.verilog" enable="1"/>
+        <File path="../src/mpu6050_reader.v" type="file.verilog" enable="1"/>
+        <File path="../src/hit_detector.v" type="file.verilog" enable="1"/>
+        <File path="../src/isqrt.v" type="file.verilog" enable="1"/>
+        <File path="../src/i2c_master.v" type="file.verilog" enable="1"/>
+        <File path="demo_drum.cst" type="file.cst" enable="1"/>
+    </FileList>
+</Project>

@@ -1,0 +1,39 @@
+//============================================================
+// demo_drum.cst —— 电子鼓（MPU6050 + ES8388）引脚约束
+//
+// 两块 I2C 总线物理分开，避免总线仲裁：
+//   ES8388  -> J6 PMOD（保持 demo_es8388 的接法不变）
+//   MPU6050 -> J5 PMOD（SCL=A10 / SDA=A11）
+//
+// PMOD 通用供电脚（三个排针都一样）：pin1/2 = 3V3，pin3/4 = GND
+// 每个排针 pin1 = 方形焊盘
+//============================================================
+
+IO_LOC "clk" E2;                        // 50MHz 有源晶振
+IO_LOC "led[0]" D7;                     // 丝印 LED4（DONE 脚，需开复用）
+IO_LOC "led[1]" E8;                     // 丝印 LED3（READY 脚，需开复用）
+
+// ---- ES8388：J6（上边缘最左 PMOD）----
+//   J6: pin5=H5  pin6=J5  pin7=H8  pin8=H7  pin9=G7  pin11=F5  pin12=G5
+IO_LOC "aud_mclk"   H5;                 // J6 pin5  -> 模块12 I2S_MCLK
+IO_LOC "aud_bclk"   J5;                 // J6 pin6  <- 模块10 I2S_SCLK（芯片给 FPGA）
+IO_LOC "aud_lrc"    H8;                 // J6 pin7  <- 模块 6 I2S_LRCK（芯片给 FPGA）
+IO_LOC "aud_dacdat" H7;                 // J6 pin8  -> 模块 8 I2S_SDIN
+IO_LOC "aud_adcdat" G7;                 // J6 pin9  <- 模块 4 I2S_SDOUT
+IO_LOC "aud_scl"    G5;                 // J6 pin12 -> 模块14 I2C_SCL
+IO_LOC "aud_sda"    F5;                 // J6 pin11 <-> 模块16 I2C_SDA
+
+// ---- MPU6050：J5（上边缘中间 PMOD），独立 I2C ----
+//   J5: pin11=A11  pin12=A10
+IO_LOC "imu_scl" A10;                   // J5 pin12 -> GY-521 SCL
+IO_LOC "imu_sda" A11;                   // J5 pin11 <-> GY-521 SDA
+// 模块板上自带 2.2k 上拉，这里不用再加
+
+// ---- 板载按键（2026-10-11 key_probe 实测：S1=H11、S2=H10，均高有效）----
+IO_LOC "key_s1" H11;
+IO_LOC "key_s2" H10;
+// ⚠️⚠️ 必须显式下拉！只写 IO_LOC 会让引脚浮空，按键松开后被内部弱上拉
+//    一直保持高电平，消抖状态机出不了"已按下"——表现就是"按一次有效、
+//    之后怎么按都没反应"。这个坑 2026-10-09 和 2026-10-11 各踩过一次。
+IO_PORT "key_s1" PULL_MODE=DOWN DRIVE=OFF BANK_VCCIO=3.3;
+IO_PORT "key_s2" PULL_MODE=DOWN DRIVE=OFF BANK_VCCIO=3.3;
