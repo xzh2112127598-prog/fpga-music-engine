@@ -10,7 +10,16 @@ module es8388_config #(
     parameter WL         = 6'd24,
     parameter BIT_CTRL   = 1'b0,
     parameter CLK_FREQ   = 26'd50_000_000,
-    parameter I2C_FREQ   = 18'd250_000
+    // ⚠️ 原参考工程是 250kHz，2026-10-11 降到 50kHz，原因：
+    //    J6 上只剩 ES8388 自己时总线没有外部上拉（MPU6050 搬到 J5 后，它
+    //    模块板那对 2.2kΩ 上拉也跟着走了），只靠 FPGA 内部约 10kΩ 弱上拉，
+    //    250kHz 要求的上升时间太短、SDA 爬不上去 -> 寄存器写不进去 ->
+    //    芯片保持默认值 -> DAC 乱输出（耳机里是噪声）-> 不起振。
+    //    降到 50kHz 后上升沿有 5 倍时间，弱上拉也能工作。
+    //    代价：24 个寄存器的配置从约 3ms 变成约 13ms，只在启动时跑一次。
+    // ⚠️ 不能再往下降太多：i2c_dri 的 clk_divide 只有 9 位（最大 511），
+    //    clk_divide=(CLK_FREQ/I2C_FREQ)>>3，所以 I2C_FREQ 最低约 12.3kHz。
+    parameter I2C_FREQ   = 18'd50_000
 )(
     input       clk,
     input       rst_n,
@@ -63,7 +72,7 @@ i2c_reg_cfg #(
     .i2c_data       (reg_data)
 );
 
-// 使用250kHz I2C总线把寄存器表写入ES8388。
+// 使用 50kHz I2C 总线把寄存器表写入 ES8388（降速原因见上面的 I2C_FREQ 注释）。
 i2c_dri #(
     .SLAVE_ADDR     (SLAVE_ADDR),
     .CLK_FREQ       (CLK_FREQ),
