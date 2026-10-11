@@ -23,6 +23,16 @@ IO_LOC "aud_adcdat" G7;                 // J6 pin9  <- 模块 4 I2S_SDOUT
 IO_LOC "aud_scl"    G5;                 // J6 pin12 -> 模块14 I2C_SCL
 IO_LOC "aud_sda"    F5;                 // J6 pin11 <-> 模块16 I2C_SDA
 
+// ⚠️⚠️ I2C 必须有上拉！这条不加，ES8388 一个寄存器都写不进去。
+//   2026-10-11 实测踩坑：之前 MPU6050 也插在 J6 上，靠它模块板的
+//   2.2kΩ 上拉把总线拉住，ES8388 才配得进去。把 MPU6050 搬到 J5 之后
+//   J6 上只剩 ES8388 自己，上拉没了 —— 表现为"快闪 + 耳机里只有噪声"
+//   （寄存器保持默认值，DAC 乱输出）。修法：用 FPGA 内部上拉补上。
+//   若内部上拉（约 10kΩ）在长杜邦线下仍不够稳，就在 G5->3V3、F5->3V3
+//   各焊/插一个 4.7kΩ 外部上拉。
+IO_PORT "aud_scl" PULL_MODE=UP DRIVE=8 BANK_VCCIO=3.3;
+IO_PORT "aud_sda" PULL_MODE=UP DRIVE=8 BANK_VCCIO=3.3;
+
 // ---- MPU6050：J5（上边缘中间 PMOD），独立 I2C ----
 //   J5: pin11=A11  pin12=A10
 IO_LOC "imu_scl" A10;                   // J5 pin12 -> GY-521 SCL
