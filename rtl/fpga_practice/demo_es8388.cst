@@ -20,6 +20,16 @@ IO_LOC "aud_adcdat" G7;                 // J6 pin9  <- 模块 4 I2S_SDOUT
 IO_LOC "aud_scl"  G5;                   // J6 pin12 -> 模块14 I2C_SCL
 IO_LOC "aud_sda"  F5;                   // J6 pin11 <-> 模块16 I2C_SDA
 
-// ✅ 2026-10-11 用 key_probe 实测确认（早期记的 "K6 低有效" 是错的，已删除）：
-IO_LOC "key_s1" H11;                    // 丝印 S1，高有效（按下=1），已实测可用
-IO_LOC "key_s2" H10;                    // 丝印 S2，高有效（与 S1 同电路，推测）
+// ✅ 2026-10-11 用 key_probe 实测确认：
+//   S1 = H11（高有效，按下=1）、S2 = H10（高有效）；K6 经实测不是按键，已移除。
+IO_LOC "key_s1" H11;                    // 丝印 S1
+IO_LOC "key_s2" H10;                    // 丝印 S2
+
+// ⚠️⚠️ 最关键的一行：这两个键**必须显式下拉**，不能省！
+//   不写 IO_PORT 时 Gowin 默认浮空，而按键是"按下接 3V3、松开悬空"——
+//   松开后引脚没有放电回路，被 FPGA 内部弱上拉一直拉成 1，
+//   于是消抖状态机永远出不了"已按下"，再按也不会产生脉冲。
+//   key_probe 实测到的正是这个：按一下灯亮，松开后灯不灭、再按也没变化。
+//   （同类坑 2026-10-09 在 K6 上踩过一次：那时是 PULL_MODE=NONE 改成 UP。）
+IO_PORT "key_s1" PULL_MODE=DOWN DRIVE=OFF BANK_VCCIO=3.3;
+IO_PORT "key_s2" PULL_MODE=DOWN DRIVE=OFF BANK_VCCIO=3.3;
