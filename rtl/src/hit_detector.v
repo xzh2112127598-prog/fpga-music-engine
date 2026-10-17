@@ -11,10 +11,10 @@
 //      ⚠️ 千万别对加速度做两次积分求位置 —— 漂移会爆炸
 //   3) 状态机 IDLE -> TRACK(峰值窗) -> FIRE -> REFRACTORY(不应期)
 //      不应期必须有：鼓槌弹跳会造成一敲触发三四次，听着像机关枪
-//   4) 峰值窗内累加三轴动作分量的绝对值，判音色（三轴分量占比）：
-//      轻敲(合加速度峰值 < 1.0g) -> 镲
-//      重敲且 Z 轴占比 > X+Y（垂直冲击） -> 底鼓
-//      重敲且横向分量占优 -> 军鼓
+//   4) 峰值窗内累加三轴动作分量绝对值，取最大者判音色（纯方位，不用轻/重）：
+//      Z 轴最大 -> 底鼓（垂直拍板面）
+//      X 轴最大 -> 军鼓（沿 X 侧推）
+//      Y 轴最大 -> 镲  （沿 Y 侧推）
 //   5) 力度 = floor(峰值幅值 * VEL_K / 65536)，封顶 127
 //      幅值要真开方（阈值可以比平方，力度必须是幅值本身，所以 isqrt 躲不掉）
 //
@@ -46,8 +46,6 @@ module hit_detector #(
     localparam integer       WIN_CNT    = (WIN_MS  * IMU_RATE) / 1000 + 1;  // MATLAB: wcnt>5
     localparam integer       REFR_CNT   = (REFR_MS * IMU_RATE) / 1000;
     localparam integer       VEL_K      = (127 * 65536) / (10 * LSBG);      // Q16
-    // 轻/重分界：合加速度峰值平方 < (1.0g)^2 判为"轻敲"→镲
-    localparam signed [39:0] LIGHT_SQ   = 1 * LSBG * LSBG;
 
     localparam S_IDLE = 2'd0, S_TRACK = 2'd1, S_SQRT = 2'd2, S_REFR = 2'd3;
 
@@ -152,13 +150,14 @@ module hit_detector #(
                         wcnt <= wcnt + 8'd1;
                     end
                     if (sqrt_start) begin
-                        // 三轴分量占比判音色（执行令规格）：
-                        //   轻敲（合加速度峰值 <1.0g）→ 镲
-                        //   重敲且 Z 轴占比 > X+Y（垂直冲击）→ 底鼓
-                        //   重敲且横向分量占优 → 军鼓
-                        if (peak_sq < LIGHT_SQ)           type_r <= 2'd3;   // 镲
-                        else if (zsum > (xsum + ysum))    type_r <= 2'd1;   // 底鼓
-                        else                              type_r <= 2'd2;   // 军鼓
+                        // 三轴方向判音色（纯方位，不用"轻/重"，避免移动被误判成镲）：
+                        //   峰值窗内累加三轴动作分量 |dx|/|dy|/|dz|，取最大者定鼓件：
+                        //   Z 轴最大 → 底鼓（垂直拍板面）
+                        //   X 轴最大 → 军鼓（沿 X 方向侧推）
+                        //   Y 轴最大 → 镲  （沿 Y 方向侧推）
+                        if (zsum >= xsum && zsum >= ysum)    type_r <= 2'd1;   // 底鼓
+                        else if (xsum >= ysum)               type_r <= 2'd2;   // 军鼓
+                        else                                 type_r <= 2'd3;   // 镲
                         st <= S_SQRT;
                     end
                 end
