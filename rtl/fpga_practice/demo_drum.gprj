@@ -13,7 +13,7 @@
         <File path="../es8388/i2c_reg_cfg.v" type="file.verilog" enable="1"/>
         <File path="../es8388/audio_receive.v" type="file.verilog" enable="1"/>
         <File path="../es8388/audio_send_mono.v" type="file.verilog" enable="1"/>
-        <File path="../src/osc_dds.v" type="file.verilog" enable="1"/>
+        <File path="../src/drum_voice.v" type="file.verilog" enable="1"/>
         <File path="../src/mpu6050_reader.v" type="file.verilog" enable="1"/>
         <File path="../src/hit_detector.v" type="file.verilog" enable="1"/>
         <File path="../src/isqrt.v" type="file.verilog" enable="1"/>

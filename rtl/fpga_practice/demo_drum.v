@@ -165,9 +165,10 @@ module demo_drum #(
     wire hit_ev = hit_sync[2] ^ hit_sync[1];
 
     // 类型/力度是慢变信号，两级同步即可（音频上短暂不一致无所谓）
+    // 复位成"底鼓、力度0"，避免上电第一敲 race 成非法类型 0
     reg [8:0] tv_s0, tv_s1;
     always @(posedge aud_bclk or negedge audio_rst_n)
-        if (!audio_rst_n) begin tv_s0 <= 9'd0; tv_s1 <= 9'd0; end
+        if (!audio_rst_n) begin tv_s0 <= 9'b01_0000000; tv_s1 <= 9'b01_0000000; end
         else              begin tv_s0 <= {trig_type, trig_vel}; tv_s1 <= tv_s0; end
     wire [1:0] cur_type = tv_s1[8:7];
     wire [6:0] cur_vel  = tv_s1[6:0];
@@ -180,74 +181,37 @@ module demo_drum #(
     wire lrc_edge = aud_lrc ^ lrc_d;
     wire tick_new = lrc_edge & aud_lrc;      // 每样本一次
 
-    // ---------- 音源：DDS 正弦 + LFSR 噪声 ----------
-    // FTW = round(f × 2^32 / 48000.53)
-    localparam [31:0] FTW_KICK  = 32'd5368656;    // 底鼓 60Hz
-    localparam [31:0] FTW_SNARE = 32'd16105968;   // 军鼓 180Hz
-
-    reg [31:0] m_ftw;
+    // ---------- 多 voice：4 个鼓声 voice，round-robin 分配 ----------
+    // 快速连敲互不打断：每次触发分给"最久没响"的下一个 voice，
+    // 后敲只是覆盖掉最早那个，其余还在正常衰减 → 不吞音。
+    reg [1:0] vptr;
     always @(posedge aud_bclk or negedge audio_rst_n)
-        if (!audio_rst_n) m_ftw <= FTW_KICK;
-        else if (hit_ev)  m_ftw <= (cur_type == 2'd2) ? FTW_SNARE : FTW_KICK;
+        if (!audio_rst_n) vptr <= 2'd0;
+        else if (hit_ev) vptr <= vptr + 1'b1;
 
-    wire signed [15:0] dds_out;
-    osc_dds #(
-        .PHASE_W  (32),
-        .ADDR_W   (10),
-        .DATA_W   (16),
-        .IPOLATE  (1),
-        .ROM_FILE ("sine_1024.hex")
-    ) u_dds (
-        .clk      (aud_bclk),
-        .rst_n    (audio_rst_n),
-        .en       (tick_new),
-        .ftw      (m_ftw),
-        .load     (1'b0),
-        .phase_i  (32'd0),
-        .out      (dds_out),
-        .out_valid(),
-        .phase_o  ()
-    );
+    wire trig0 = hit_ev && (vptr == 2'd0);
+    wire trig1 = hit_ev && (vptr == 2'd1);
+    wire trig2 = hit_ev && (vptr == 2'd2);
+    wire trig3 = hit_ev && (vptr == 2'd3);
 
-    reg [16:0] lfsr = 17'h1;
-    always @(posedge aud_bclk or negedge audio_rst_n)
-        if (!audio_rst_n)      lfsr <= 17'h1;
-        else if (tick_new)     lfsr <= {lfsr[15:0], lfsr[16] ^ lfsr[13]};
-    wire signed [15:0] noise = {1'b0, lfsr[15:1]};   // 小幅白噪声
+    wire signed [23:0] v0, v1, v2, v3;
+    drum_voice u_v0 (.clk(aud_bclk), .rst_n(audio_rst_n), .tick(tick_new),
+        .trig(trig0), .trig_type(cur_type), .trig_vel(cur_vel), .out(v0));
+    drum_voice u_v1 (.clk(aud_bclk), .rst_n(audio_rst_n), .tick(tick_new),
+        .trig(trig1), .trig_type(cur_type), .trig_vel(cur_vel), .out(v1));
+    drum_voice u_v2 (.clk(aud_bclk), .rst_n(audio_rst_n), .tick(tick_new),
+        .trig(trig2), .trig_type(cur_type), .trig_vel(cur_vel), .out(v2));
+    drum_voice u_v3 (.clk(aud_bclk), .rst_n(audio_rst_n), .tick(tick_new),
+        .trig(trig3), .trig_type(cur_type), .trig_vel(cur_vel), .out(v3));
 
-    // ---------- 包络：指数衰减（每样本减 1/2^shift）----------
-    //   shift=10 -> tau≈1024 样本≈21ms，衰减到 -40dB 约 200ms（底鼓）
-    //   shift=9  -> 军鼓更短促
-    //   shift=11 -> 镲更绵长
-    reg [16:0] env = 17'd0;
-    reg [3:0]  decay_sh = 4'd10;
-    wire [16:0] dec = (env >> decay_sh) | 17'd1;     // 至少减 1，否则会卡住不掉
-    always @(posedge aud_bclk or negedge audio_rst_n)
-        if (!audio_rst_n) begin
-            env <= 17'd0; decay_sh <= 4'd10;
-        end else if (hit_ev) begin
-            env <= 17'd131071;                        // 满幅起音
-            case (cur_type)
-                2'd1:     decay_sh <= 4'd10;          // 底鼓
-                2'd2:     decay_sh <= 4'd9;           // 军鼓
-                default:  decay_sh <= 4'd11;          // 镲
-            endcase
-        end else if (tick_new && env != 0) begin
-            env <= (env > dec) ? (env - dec) : 17'd0;
-        end
-
-    // ---------- 混合：底鼓纯正弦 / 军鼓正弦+噪声 / 镲纯噪声 ----------
-    wire signed [15:0] src = (cur_type == 2'd1) ? dds_out                    :
-                             (cur_type == 2'd2) ? (dds_out >>> 1) + (noise >>> 1) :
-                                                  (noise >>> 1);
-
-    // ---------- 幅度 = 包络(0..255) × 力度(0..254) ----------
-    wire [7:0] env8     = env[16:9];
-    wire [8:0] vel_gain = {cur_vel, 1'b0};            // 0..254
-    wire [8:0] gain     = (env8 * vel_gain) >> 8;     // 0..253
-    wire signed [24:0] prod25 = src * {1'b0, gain};
-    wire signed [23:0] tone24 = prod25[23:0];
-    wire [31:0] dac_data = {{8{tone24[23]}}, tone24};
+    // ---------- 求和 + 限幅（4 voice 叠加，防溢出爆音）----------
+    wire signed [25:0] sum =
+        {{2{v0[23]}}, v0} + {{2{v1[23]}}, v1} +
+        {{2{v2[23]}}, v2} + {{2{v3[23]}}, v3};
+    wire signed [23:0] mix =
+        (sum >  26'sd8388607)  ?  24'sd8388607 :
+        (sum < -26'sd8388608)  ? -24'sd8388608 : sum[23:0];
+    wire [31:0] dac_data = {{8{mix[23]}}, mix};
 
     // ---------- ES8388 收发 ----------
     wire [31:0] adc_data;
