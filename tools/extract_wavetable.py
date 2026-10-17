@@ -16,7 +16,9 @@ import numpy as np
 
 SRC = r"C:/Users/XuXia/Doubao/chats/2026-09-21/new-chat/fpga_instrument_samples/fpga_ready/wav16"
 OUT = r"D:/GitHub/fpga-music-engine/rtl/src/wavetable"
-WAVETABLE_N = 256          # 每个音色波表的点数（一个周期）
+WAVETABLE_N = 256          # 提取的单周期点数
+ROM_N       = 1024         # ROM 深度：padding 到 1024 点，让 Gowin 自动映射 BSRAM
+                           # （256 点会被映射成 LUT 组合逻辑，$readmemh 初始化会丢）
 
 def load(name):
     with wave.open(os.path.join(SRC, name + ".wav")) as w:
@@ -86,13 +88,14 @@ def main():
         if wave is None:
             report.append(f"{name}: 基频估计失败")
             continue
-        # 输出 hex
+        # 输出 hex（重复到 ROM_N 点，保证进 BSRAM）
         path = os.path.join(OUT, name.split("_")[0] + ".hex")
+        wave1024 = np.tile(wave, ROM_N // WAVETABLE_N)
         with open(path, "w") as f:
-            f.write(to_hex(wave))
+            f.write(to_hex(wave1024))
         report.append(
             f"{name}: onset={onset}样本  f0={f0:.1f}Hz  周期={fs/f0:.1f}样本  "
-            f"波表={path} ({WAVETABLE_N}点)"
+            f"波表={path} ({WAVETABLE_N}点×{ROM_N//WAVETABLE_N}重复)"
         )
         # 打印波形前 8 个值，方便肉眼核对
         print(f"[{name}] f0={f0:.1f}Hz  first8={[round(v,3) for v in wave[:8]]}")

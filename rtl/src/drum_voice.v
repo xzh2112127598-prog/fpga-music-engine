@@ -85,14 +85,24 @@ module drum_voice (
     // kick.hex / snare.hex 各 256 点、有符号 Q15，由 tools/extract_wavetable.py
     // 从 AVL-Drumkits 真实样本里只取一个基频周期生成。衰减尾巴、音高下滑、
     // 力度全部由本模块现场算，所以仍是"波表合成"，不是采样回放。
-    reg [15:0] kick_wt  [0:255];
-    reg [15:0] snare_wt [0:255];
-    initial begin
-        $readmemh("../src/wavetable/kick.hex",  kick_wt);
-        $readmemh("../src/wavetable/snare.hex", snare_wt);
+    // 波表 ROM（从真实鼓声提取的「单周期」波形，不是整段录音）
+    // combined.hex = kick(1024) + snare(1024)，共 2048 点、有符号 Q15。
+    // ⚠️ 必须用标准 BSRAM 同步读：地址单独寄存成 wt_addr 再读 wt_rom[wt_addr]，
+    //    且深度够大（2048）。否则 Gowin 映射成 LUT 组合逻辑，$readmemh 初始化
+    //    会丢（波表全 0 → 静音）—— 这是和 osc_dds 的 sine ROM 对齐的写法。
+    reg [15:0] wt_rom [0:2047];
+    initial $readmemh("combined.hex", wt_rom);
+
+    reg [10:0]       wt_addr;
+    reg signed [15:0] wt_out;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            wt_addr <= 11'd0; wt_out <= 16'sd0;
+        end else begin
+            wt_addr <= (type_r == 2'd1 ? 11'd0 : 11'd1024) + {1'b0, phase[31:22]};
+            wt_out <= wt_rom[wt_addr];
+        end
     end
-    wire [7:0]  wt_ph  = phase[31:24];             // 256 点波表地址
-    wire signed [15:0] wt_out = (type_r == 2'd1) ? kick_wt[wt_ph] : snare_wt[wt_ph];
 
     // ---- 白噪声 ----
     wire signed [15:0] noise = {1'b0, lfsr[15:1]} - 16'sd8192;     // -8192..8191
