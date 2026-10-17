@@ -11,8 +11,10 @@
 //      ⚠️ 千万别对加速度做两次积分求位置 —— 漂移会爆炸
 //   3) 状态机 IDLE -> TRACK(峰值窗) -> FIRE -> REFRACTORY(不应期)
 //      不应期必须有：鼓槌弹跳会造成一敲触发三四次，听着像机关枪
-//   4) 峰值窗内累加 ay 求均值判方位（左/中/右 -> 军鼓/底鼓/镲）
-//      判据用 ysum 直接与 DIR_TH_NUM 比（避免整除截断造成边界差一）
+//   4) 峰值窗内累加三轴动作分量的绝对值，判音色（三轴分量占比）：
+//      轻敲(合加速度峰值 < 1.0g) -> 镲
+//      重敲且 Z 轴占比 > X+Y（垂直冲击） -> 底鼓
+//      重敲且横向分量占优 -> 军鼓
 //   5) 力度 = floor(峰值幅值 * VEL_K / 65536)，封顶 127
 //      幅值要真开方（阈值可以比平方，力度必须是幅值本身，所以 isqrt 躲不掉）
 //
@@ -39,14 +41,13 @@ module hit_detector #(
     output reg  [6:0]       hit_vel         // 力度 0..127
 );
 
-    // 阈值 = 0.5g（比平方，不开根号）；方位判据 = ±0.3g
+    // 阈值 = 0.5g（比平方，不开根号）
     localparam signed [31:0] THR_SQ     = (LSBG/2) * (LSBG/2);
     localparam integer       WIN_CNT    = (WIN_MS  * IMU_RATE) / 1000 + 1;  // MATLAB: wcnt>5
     localparam integer       REFR_CNT   = (REFR_MS * IMU_RATE) / 1000;
     localparam integer       VEL_K      = (127 * 65536) / (10 * LSBG);      // Q16
-    // 方位判据的"分子版"：ysum/WIN_CNT > 0.3g  <=>  ysum > 0.3*LSBg*WIN_CNT
-    // 用 ceil 保证与 MATLAB 的浮点比较在边界上一致（否则 614.4 附近会差一个类型）
-    localparam signed [31:0] DIR_TH_NUM = ((LSBG*3) * WIN_CNT + 9) / 10;
+    // 轻/重分界：合加速度峰值平方 < (1.0g)^2 判为"轻敲"→镲
+    localparam signed [39:0] LIGHT_SQ   = 1 * LSBG * LSBG;
 
     localparam S_IDLE = 2'd0, S_TRACK = 2'd1, S_SQRT = 2'd2, S_REFR = 2'd3;
 
@@ -61,10 +62,14 @@ module hit_detector #(
     wire signed [31:0] dx = primed ? (ax_ext - bx) : 32'sd0;
     wire signed [31:0] dy = primed ? (ay_ext - by) : 32'sd0;
     wire signed [31:0] dz = primed ? (az_ext - bz) : 32'sd0;
+    // 三轴动作分量的绝对值（用于窗内占比判定，躲开平方）
+    wire signed [31:0] dx_abs = (dx < 32'sd0) ? -dx : dx;
+    wire signed [31:0] dy_abs = (dy < 32'sd0) ? -dy : dy;
+    wire signed [31:0] dz_abs = (dz < 32'sd0) ? -dz : dz;
 
     // ---- 峰值窗 ----
     reg [39:0] peak_sq;
-    reg signed [31:0] ysum;
+    reg signed [31:0] xsum, ysum, zsum;
     reg [7:0]  wcnt;
     reg [7:0]  refr;
     reg [1:0]  st;
@@ -106,7 +111,8 @@ module hit_detector #(
         if (!rst_n) begin
             bx <= 32'sd0; by <= 32'sd0; bz <= 32'sd0;
             primed <= 1'b0;
-            peak_sq <= 40'd0; ysum <= 32'sd0; wcnt <= 8'd0; refr <= 8'd0;
+            peak_sq <= 40'd0; xsum <= 32'sd0; ysum <= 32'sd0; zsum <= 32'sd0;
+            wcnt <= 8'd0; refr <= 8'd0;
             st <= S_IDLE; hit_valid <= 1'b0; hit_type <= 2'd0; hit_vel <= 7'd0;
             type_r <= 2'd0;
         end else begin
@@ -129,7 +135,7 @@ module hit_detector #(
                 S_IDLE: begin
                     if (sample_valid && refr == 8'd0 && primed && magsq > THR_SQ) begin
                         peak_sq <= magsq;
-                        ysum    <= 32'sd0;   // 触发样本不计入窗内均值（与 MATLAB 一致）
+                        xsum    <= 32'sd0; ysum <= 32'sd0; zsum <= 32'sd0;
                         wcnt    <= 8'd0;
                         st      <= S_TRACK;
                     end else if (sample_valid && refr != 8'd0) begin
@@ -140,14 +146,19 @@ module hit_detector #(
                 S_TRACK: begin
                     if (sample_valid) begin
                         if (magsq > peak_sq) peak_sq <= magsq;
-                        ysum <= ysum + dy;
+                        xsum <= xsum + dx_abs;
+                        ysum <= ysum + dy_abs;
+                        zsum <= zsum + dz_abs;
                         wcnt <= wcnt + 8'd1;
                     end
                     if (sqrt_start) begin
-                        // 方位 = 窗内 ay 均值；用"当前样本已计入"的和来判
-                        if      (ysum + dy >=  DIR_TH_NUM) type_r <= 2'd2;   // 军鼓
-                        else if (ysum + dy <= -DIR_TH_NUM) type_r <= 2'd3;   // 镲
-                        else                               type_r <= 2'd1;   // 底鼓
+                        // 三轴分量占比判音色（执行令规格）：
+                        //   轻敲（合加速度峰值 <1.0g）→ 镲
+                        //   重敲且 Z 轴占比 > X+Y（垂直冲击）→ 底鼓
+                        //   重敲且横向分量占优 → 军鼓
+                        if (peak_sq < LIGHT_SQ)           type_r <= 2'd3;   // 镲
+                        else if (zsum > (xsum + ysum))    type_r <= 2'd1;   // 底鼓
+                        else                              type_r <= 2'd2;   // 军鼓
                         st <= S_SQRT;
                     end
                 end

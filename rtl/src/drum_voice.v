@@ -39,8 +39,15 @@ module drum_voice (
     // 每样本包络递减量（组合，取当拍 env 值）
     wire [18:0] dec = (env >> decay_sh) | 19'd1;   // 至少减 1，防卡死
 
-    // 力度平方（显式 16 位，避免 7bit×7bit 被工具截断成 7 位导致 vgain 恒 0）
-    wire [15:0] velsq = {1'b0, trig_vel} * {1'b0, trig_vel};
+    // 力度折线：vel(0..127) -> 增益(0..127)，三档连续线性（执行令规格）。
+    //   关键点：1.0g≈13vel→0.60(76) 1.8g≈23vel→0.85(108) 2.6g≈33vel→1.00(127)
+    //   斜率用移位近似：段1 ×6 / 段2 +3每步 / 段3 +2每步，误差 ±4 听感无差。
+    wire [6:0] vel   = trig_vel;
+    wire [7:0] vg_lin =
+        (vel <= 7'd12) ? (vel << 2) + (vel << 1) :                  // 0..12:  ×6
+        (vel <= 7'd22) ? 8'd76 + ((vel - 7'd13) << 1) + (vel - 7'd13) :  // 13..22: +3
+        (vel <= 7'd32) ? 8'd108 + ((vel - 7'd23) << 1) :            // 23..32: +2
+                         8'd127;                                     // >32: 封顶 1.0
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -55,8 +62,7 @@ module drum_voice (
         end else begin
             if (trig) begin
                 type_r <= trig_type;
-                // 力度曲线：平方。轻敲更轻、重敲明显更响，动态范围大。
-                vgain  <= velsq[14:7];   // >>7，0..126
+                vgain  <= vg_lin;   // 力度折线（连续线性三档）
                 env    <= 19'd262143;
                 phase  <= 32'd0;
                 case (trig_type)
