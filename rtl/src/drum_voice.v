@@ -39,6 +39,9 @@ module drum_voice (
     // 每样本包络递减量（组合，取当拍 env 值）
     wire [18:0] dec = (env >> decay_sh) | 19'd1;   // 至少减 1，防卡死
 
+    // 力度平方（显式 16 位，避免 7bit×7bit 被工具截断成 7 位导致 vgain 恒 0）
+    wire [15:0] velsq = {1'b0, trig_vel} * {1'b0, trig_vel};
+
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             phase    <= 32'd0;
@@ -53,7 +56,7 @@ module drum_voice (
             if (trig) begin
                 type_r <= trig_type;
                 // 力度曲线：平方。轻敲更轻、重敲明显更响，动态范围大。
-                vgain  <= (trig_vel * trig_vel) >> 7;   // 0..126
+                vgain  <= velsq[14:7];   // >>7，0..126
                 env    <= 19'd262143;
                 phase  <= 32'd0;
                 case (trig_type)
@@ -96,9 +99,10 @@ module drum_voice (
                            hp_noise;                                 // 镲：高通噪声
 
     // ---- 幅度 = 音源 × 包络 × 力度 ----
-    wire [8:0] env8 = env[18:11];                        // 0..255
-    wire [8:0] gain = (env8 * {1'b0, vgain}) >> 8;       // 0..126
+    wire [7:0]  env8   = env[17:10];       // 满量程 0..255（env=262143 时 =255）
+    wire [15:0] egprod = env8 * vgain;     // 显式 16 位，防截断
+    wire [8:0]  gain   = egprod >> 8;      // 0..125
     wire signed [24:0] prod = src * {1'b0, gain};
-    assign out = prod[23:0];                             // 24bit 有符号
+    assign out = prod[23:0];               // 24bit 有符号
 
 endmodule
