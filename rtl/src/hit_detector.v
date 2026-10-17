@@ -7,14 +7,15 @@
 //      同一个滤波器办两件事 —— 减掉它就是"动作分量"，保留它就是"朝向"
 //      ⚠️ 上电第一个样本直接把基线预置成当前值（primed），
 //         否则 base 从 0 爬到 1g 的这段时间里 dz≡2048，会连续误触发。
-//   2) 动作分量幅值平方与阈值平方比较（躲开开根号）
+//   2) 动作分量幅值平方与阈值平方比较（阈值 2.0g，只抓真实击打冲击、
+//      过滤掉手持移动和抖动，躲开开根号）
 //      ⚠️ 千万别对加速度做两次积分求位置 —— 漂移会爆炸
 //   3) 状态机 IDLE -> TRACK(峰值窗) -> FIRE -> REFRACTORY(不应期)
 //      不应期必须有：鼓槌弹跳会造成一敲触发三四次，听着像机关枪
-//   4) 峰值窗内累加三轴动作分量绝对值，取最大者判音色（纯方位，不用轻/重）：
-//      Z 轴最大 -> 底鼓（垂直拍板面）
-//      X 轴最大 -> 军鼓（沿 X 侧推）
-//      Y 轴最大 -> 镲  （沿 Y 侧推）
+//   4) 峰值窗内累加带符号 dx/dz，XZ 平面三方向分区（右手持槌）：
+//      dz 正且 |dz|>|dx| -> 右上（斜上点）-> 军鼓
+//      dz 负且 |dz|>|dx| -> 右下（斜下点）-> 镲
+//      |dx|>=|dz|        -> 中间（正前方点）-> 底鼓
 //   5) 力度 = floor(峰值幅值 * VEL_K / 65536)，封顶 127
 //      幅值要真开方（阈值可以比平方，力度必须是幅值本身，所以 isqrt 躲不掉）
 //
@@ -41,8 +42,11 @@ module hit_detector #(
     output reg  [6:0]       hit_vel         // 力度 0..127
 );
 
-    // 阈值 = 0.5g（比平方，不开根号）
-    localparam signed [31:0] THR_SQ     = (LSBG/2) * (LSBG/2);
+    // 触发阈值 = 2.0g（比平方，不开根号）。
+    // ⚠️ 之前 0.5g 太灵敏：手拿模块缓慢移动就超过阈值、一路误触发。
+    //    真实鼓槌"甩起来→击中停下"的冲击峰值约 2~4g，用 2g 才能只抓击打、
+    //    过滤掉移动和抖动。
+    localparam signed [31:0] THR_SQ     = (2 * LSBG) * (2 * LSBG);
     localparam integer       WIN_CNT    = (WIN_MS  * IMU_RATE) / 1000 + 1;  // MATLAB: wcnt>5
     localparam integer       REFR_CNT   = (REFR_MS * IMU_RATE) / 1000;
     localparam integer       VEL_K      = (127 * 65536) / (10 * LSBG);      // Q16
@@ -60,14 +64,15 @@ module hit_detector #(
     wire signed [31:0] dx = primed ? (ax_ext - bx) : 32'sd0;
     wire signed [31:0] dy = primed ? (ay_ext - by) : 32'sd0;
     wire signed [31:0] dz = primed ? (az_ext - bz) : 32'sd0;
-    // 三轴动作分量的绝对值（用于窗内占比判定，躲开平方）
+    // 方向判定用带符号的 dx/dz（区分上下/左右），绝对值版用于比较大小
     wire signed [31:0] dx_abs = (dx < 32'sd0) ? -dx : dx;
-    wire signed [31:0] dy_abs = (dy < 32'sd0) ? -dy : dy;
     wire signed [31:0] dz_abs = (dz < 32'sd0) ? -dz : dz;
 
     // ---- 峰值窗 ----
     reg [39:0] peak_sq;
-    reg signed [31:0] xsum, ysum, zsum;
+    reg signed [31:0] xsum, zsum;    // 累加带符号的 dx/dz，判方向
+    wire signed [31:0] xsum_abs = (xsum < 32'sd0) ? -xsum : xsum;
+    wire signed [31:0] zsum_abs = (zsum < 32'sd0) ? -zsum : zsum;
     reg [7:0]  wcnt;
     reg [7:0]  refr;
     reg [1:0]  st;
@@ -109,7 +114,7 @@ module hit_detector #(
         if (!rst_n) begin
             bx <= 32'sd0; by <= 32'sd0; bz <= 32'sd0;
             primed <= 1'b0;
-            peak_sq <= 40'd0; xsum <= 32'sd0; ysum <= 32'sd0; zsum <= 32'sd0;
+            peak_sq <= 40'd0; xsum <= 32'sd0; zsum <= 32'sd0;
             wcnt <= 8'd0; refr <= 8'd0;
             st <= S_IDLE; hit_valid <= 1'b0; hit_type <= 2'd0; hit_vel <= 7'd0;
             type_r <= 2'd0;
@@ -133,7 +138,7 @@ module hit_detector #(
                 S_IDLE: begin
                     if (sample_valid && refr == 8'd0 && primed && magsq > THR_SQ) begin
                         peak_sq <= magsq;
-                        xsum    <= 32'sd0; ysum <= 32'sd0; zsum <= 32'sd0;
+                        xsum    <= 32'sd0; zsum <= 32'sd0;
                         wcnt    <= 8'd0;
                         st      <= S_TRACK;
                     end else if (sample_valid && refr != 8'd0) begin
@@ -144,20 +149,18 @@ module hit_detector #(
                 S_TRACK: begin
                     if (sample_valid) begin
                         if (magsq > peak_sq) peak_sq <= magsq;
-                        xsum <= xsum + dx_abs;
-                        ysum <= ysum + dy_abs;
-                        zsum <= zsum + dz_abs;
+                        xsum <= xsum + dx;   // 带符号，判左右
+                        zsum <= zsum + dz;   // 带符号，判上下
                         wcnt <= wcnt + 8'd1;
                     end
                     if (sqrt_start) begin
-                        // 三轴方向判音色（纯方位，不用"轻/重"，避免移动被误判成镲）：
-                        //   峰值窗内累加三轴动作分量 |dx|/|dy|/|dz|，取最大者定鼓件：
-                        //   Z 轴最大 → 底鼓（垂直拍板面）
-                        //   X 轴最大 → 军鼓（沿 X 方向侧推）
-                        //   Y 轴最大 → 镲  （沿 Y 方向侧推）
-                        if (zsum >= xsum && zsum >= ysum)    type_r <= 2'd1;   // 底鼓
-                        else if (xsum >= ysum)               type_r <= 2'd2;   // 军鼓
-                        else                                 type_r <= 2'd3;   // 镲
+                        // 三方向分区（XZ 平面）：右上 / 右下 / 中间
+                        //   dz 正且 |dz|>|dx| → 右上（斜上点）→ 军鼓
+                        //   dz 负且 |dz|>|dx| → 右下（斜下点）→ 镲
+                        //   |dx|>=|dz|        → 中间（正前方点）→ 底鼓
+                        if (zsum > 32'sd0 && zsum_abs > xsum_abs)       type_r <= 2'd2;
+                        else if (zsum < 32'sd0 && zsum_abs > xsum_abs)  type_r <= 2'd3;
+                        else                                            type_r <= 2'd1;
                         st <= S_SQRT;
                     end
                 end
