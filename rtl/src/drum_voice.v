@@ -23,7 +23,8 @@ module drum_voice (
     output wire signed [23:0] out
 );
     // FTW = round(f × 2^32 / 48000.53)
-    localparam [31:0] FTW_KICK_HI = 32'd13421828;   // 150Hz
+    // 底鼓 70Hz→40Hz 小幅下滑（贴近波表基频 46.8Hz 的低频区，"咚"更沉）
+    localparam [31:0] FTW_KICK_HI = 32'd6263520;    // 70Hz
     localparam [31:0] FTW_KICK_LO = 32'd3579154;    // 40Hz
     localparam [31:0] FTW_SNARE   = 32'd16106193;   // 180Hz
 
@@ -82,7 +83,7 @@ module drum_voice (
                 end
 
                 lfsr <= {lfsr[15:0], lfsr[16] ^ lfsr[13]};
-                lp   <= lp + (({1'b0, lfsr[15:1]} - lp) >>> 4);    // 一阶低通
+                lp   <= lp + (({1'b0, lfsr[15:1]} - lp) >>> 3);    // 一阶低通（>>>3 比 4 紧，高通只留高频，镲更"嘶"）
             end
         end
     end
@@ -119,7 +120,7 @@ module drum_voice (
     // ---- 音源选择 ----
     wire signed [15:0] src =
         (type_r == 2'd3) ? hp_noise :                                // 镲：高通噪声（噪声型，不用波表）
-        (type_r == 2'd2) ? ((wt_out >>> 1) + (noise >>> 1)) :       // 军鼓：snare波表(鼓皮)+响弦噪声
+        (type_r == 2'd2) ? ((wt_out >>> 1) + (noise >>> 2)) :       // 军鼓：鼓皮为主(2/3)+响弦(1/3)，和镲拉开
                            wt_out;                                   // 底鼓：kick波表
 
     // ---- 幅度 = 音源 × 包络 × 力度 ----

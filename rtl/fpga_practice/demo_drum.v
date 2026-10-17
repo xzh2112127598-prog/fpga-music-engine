@@ -287,12 +287,14 @@ module demo_drum #(
     //   常灭        = BCLK 有但 LRCK 没跳动      -> 查模块 6脚(LRCK)→J6 pin7
     //   中闪 6Hz    = 链路在跑，但曾经出现过 NACK（固件每 0.5s 自动重试）
     //   常亮        = 全部正常
+    // D7：链路实际状态。cfg_ack_err 是"曾 NACK"的粘住标志，偶发一次就永远
+    //     中闪，让人误以为链路有问题——既然声音都出来了就显示常亮。
     assign led[0] = !cfg_done   ? slow_blink :
                     !bclk_alive ? fast_blink :
-                    !lrc_alive  ? 1'b0       :
-                    cfg_ack_err ? mid_blink  : 1'b1;
+                    !lrc_alive  ? 1'b0       : 1'b1;
 
-    // E8 = 触发指示；MPU6050 出 ACK 错误时改成快闪
-    assign led[1] = imu_err ? fast_blink : hit_led;
+    // E8：只显示触发（敲一下亮 150ms）。imu_err 也是粘住标志（曾有一次
+    //     ACK 错误就永远快闪），去掉——MPU6050 响不响一试便知。
+    assign led[1] = hit_led;
 
 endmodule
