@@ -81,10 +81,18 @@ module drum_voice (
         end
     end
 
-    // ---- 三角波（相位高位折返，无需 ROM）----
-    wire [15:0]        tri_u   = phase[31] ? (~phase[30:15]) : phase[30:15];
-    wire signed [16:0] tri_s17 = {1'b0, tri_u} - 17'sd32768;    // -32768..32767
-    wire signed [15:0] tri_s   = tri_s17[15:0];
+    // ---- 波表 ROM（从真实鼓声提取的「单周期」波形，不是整段录音）----
+    // kick.hex / snare.hex 各 256 点、有符号 Q15，由 tools/extract_wavetable.py
+    // 从 AVL-Drumkits 真实样本里只取一个基频周期生成。衰减尾巴、音高下滑、
+    // 力度全部由本模块现场算，所以仍是"波表合成"，不是采样回放。
+    reg [15:0] kick_wt  [0:255];
+    reg [15:0] snare_wt [0:255];
+    initial begin
+        $readmemh("../src/wavetable/kick.hex",  kick_wt);
+        $readmemh("../src/wavetable/snare.hex", snare_wt);
+    end
+    wire [7:0]  wt_ph  = phase[31:24];             // 256 点波表地址
+    wire signed [15:0] wt_out = (type_r == 2'd1) ? kick_wt[wt_ph] : snare_wt[wt_ph];
 
     // ---- 白噪声 ----
     wire signed [15:0] noise = {1'b0, lfsr[15:1]} - 16'sd8192;     // -8192..8191
@@ -94,9 +102,9 @@ module drum_voice (
 
     // ---- 音源选择 ----
     wire signed [15:0] src =
-        (type_r == 2'd1) ? tri_s :                                  // 底鼓：三角
-        (type_r == 2'd2) ? ((tri_s >>> 1) + (noise >>> 1)) :       // 军鼓：鼓皮+响弦
-                           hp_noise;                                 // 镲：高通噪声
+        (type_r == 2'd3) ? hp_noise :                                // 镲：高通噪声（噪声型，不用波表）
+        (type_r == 2'd2) ? ((wt_out >>> 1) + (noise >>> 1)) :       // 军鼓：snare波表(鼓皮)+响弦噪声
+                           wt_out;                                   // 底鼓：kick波表
 
     // ---- 幅度 = 音源 × 包络 × 力度 ----
     wire [7:0]  env8   = env[17:10];       // 满量程 0..255（env=262143 时 =255）
